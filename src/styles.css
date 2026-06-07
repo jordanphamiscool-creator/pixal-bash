@@ -95,6 +95,7 @@
 .anim-float { animation: float-y 2.4s ease-in-out infinite; }
 .anim-evolve { animation: evolve-flash 1.2s ease-in-out; }
 .anim-flash { animation: screen-flash 0.3s ease-out; }
+.dmg-pop { animation: damage-float 0.9s ease-out forwards; position: absolute; transform: translateX(-50%); font-weight: bold; text-shadow: 0 0 4px black; }
 @keyframes bolt-fly {
   0% { left: 20%; opacity: 0; transform: scale(0.4); }
   20% { opacity: 1; }
