@@ -284,7 +284,8 @@ function Game() {
         m.lastAttack = now;
         m.attackFlash = now + 300;
         const crit = Math.random() < 0.2;
-        const dmg = Math.round(data.dmg * (crit ? 1.7 : 1) * (0.85 + Math.random() * 0.3));
+        const eff = typeMult(r[i].type, r[tgt].type);
+        const dmg = Math.round(data.dmg * (crit ? 1.7 : 1) * eff * (0.85 + Math.random() * 0.3));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
         projectilesRef.current.push({
           id: idRef.current++,
@@ -293,7 +294,7 @@ function Game() {
           color: r[i].color, dmg, crit, kind: data.kind,
           bornAt: now, duration: data.kind === "lightning" ? 200 : 420,
         });
-        pushLog(`${data.name} → ${r[tgt].stages[t.stage].name}: ${data.ability} ${crit ? "CRIT " : ""}${dmg}`, r[i].color);
+        pushLog(`${data.name} → ${r[tgt].stages[t.stage].name}: ${data.ability} ${crit ? "CRIT " : ""}${dmg}${effLabel(eff)}`, r[i].color);
       }
 
       if (m.hitFlash && now > m.hitFlash) m.hitFlash = 0;
