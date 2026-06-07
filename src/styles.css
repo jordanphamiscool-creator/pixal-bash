@@ -119,3 +119,9 @@
 .arena-wrap {
   box-shadow: 0 0 0 4px oklch(0.14 0.04 265), 0 10px 0 oklch(0.08 0.04 265);
 }
+
+@keyframes evolve-spin {
+  0%, 100% { transform: rotate(-3deg) scale(1); }
+  50% { transform: rotate(3deg) scale(1.15); }
+}
+.anim-evolve-spin { animation: evolve-spin 0.25s ease-in-out infinite; }
