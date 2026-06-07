@@ -126,6 +126,31 @@ type LogEntry = { id: number; text: string; color: string };
 
 function rand(min: number, max: number) { return Math.random() * (max - min) + min; }
 
+// Type effectiveness chart: TYPE_CHART[attacker][defender] = multiplier
+const TYPE_CHART: Record<ElementType, Partial<Record<ElementType, number>>> = {
+  fire:     { grass: 2, ice: 2, bug: 2, water: 0.5, fire: 0.5, rock: 0.5, dragon: 0.5 },
+  water:    { fire: 2, rock: 2, water: 0.5, grass: 0.5, dragon: 0.5 },
+  grass:    { water: 2, rock: 2, fire: 0.5, grass: 0.5, bug: 0.5, dragon: 0.5, fighting: 0.5, electric: 0.5, ice: 0.5, ghost: 1, psychic: 1, fairy: 0.5 },
+  electric: { water: 2, electric: 0.5, grass: 0.5, dragon: 0.5 },
+  psychic:  { fighting: 2, psychic: 0.5 },
+  rock:     { fire: 2, ice: 2, bug: 2, fighting: 0.5 },
+  ice:      { grass: 2, dragon: 2, fire: 0.5, water: 0.5, ice: 0.5 },
+  ghost:    { ghost: 2, psychic: 2 },
+  dragon:   { dragon: 2, fairy: 0.5 },
+  fighting: { rock: 2, ice: 2, bug: 0.5, psychic: 0.5, fairy: 0.5, ghost: 0 },
+  bug:      { grass: 2, psychic: 2, fire: 0.5, fighting: 0.5, fairy: 0.5, ghost: 0.5 },
+  fairy:    { fighting: 2, dragon: 2, fire: 0.5, bug: 1 },
+};
+function typeMult(att: ElementType, def: ElementType): number {
+  return TYPE_CHART[att]?.[def] ?? 1;
+}
+function effLabel(m: number): string {
+  if (m === 0) return " (no effect)";
+  if (m >= 2) return " — super effective!";
+  if (m <= 0.5) return " — not very effective";
+  return "";
+}
+
 function pickRoster(): Line[] {
   const idx = [...POOL.keys()];
   for (let i = idx.length - 1; i > 0; i--) {
@@ -259,7 +284,8 @@ function Game() {
         m.lastAttack = now;
         m.attackFlash = now + 300;
         const crit = Math.random() < 0.2;
-        const dmg = Math.round(data.dmg * (crit ? 1.7 : 1) * (0.85 + Math.random() * 0.3));
+        const eff = typeMult(r[i].type, r[tgt].type);
+        const dmg = Math.round(data.dmg * (crit ? 1.7 : 1) * eff * (0.85 + Math.random() * 0.3));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
         projectilesRef.current.push({
           id: idRef.current++,
@@ -268,7 +294,7 @@ function Game() {
           color: r[i].color, dmg, crit, kind: data.kind,
           bornAt: now, duration: data.kind === "lightning" ? 200 : 420,
         });
-        pushLog(`${data.name} → ${r[tgt].stages[t.stage].name}: ${data.ability} ${crit ? "CRIT " : ""}${dmg}`, r[i].color);
+        pushLog(`${data.name} → ${r[tgt].stages[t.stage].name}: ${data.ability} ${crit ? "CRIT " : ""}${dmg}${effLabel(eff)}`, r[i].color);
       }
 
       if (m.hitFlash && now > m.hitFlash) m.hitFlash = 0;
