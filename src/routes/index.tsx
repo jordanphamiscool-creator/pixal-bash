@@ -117,6 +117,7 @@ type Mode = "ffa" | "teams";
 type Vec = { x: number; y: number };
 type MonState = {
   pos: Vec; vel: Vec; hp: number; stage: number;
+  team: number;
   lastAttack: number; evolveTimer: number;
   hitFlash: number; attackFlash: number; evolveFlashUntil: number;
 };
