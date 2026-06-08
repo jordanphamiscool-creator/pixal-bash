@@ -202,9 +202,10 @@ type Vec = { x: number; y: number };
 type MonState = {
   pos: Vec; vel: Vec; hp: number; stage: number;
   team: number;
-  lastAttack: number; evolveTimer: number;
+  lastAttack: number; lastSpecial: number; evolveTimer: number;
   hitFlash: number; attackFlash: number; evolveFlashUntil: number;
 };
+
 type Projectile = {
   id: number; fromIdx: number; targetIdx: number;
   from: Vec; pos: Vec; angle: number;
