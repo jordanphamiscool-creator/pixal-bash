@@ -372,16 +372,21 @@ function Game() {
     if (killed) checkEnd();
   };
 
-  const reset = () => {
-    const nr = pickRoster();
+  const reset = (newMode?: Mode) => {
+    const m = newMode ?? modeRef.current;
+    modeRef.current = m;
+    setMode(m);
+    const size = m === "teams" ? TEAM_SIZE : FFA_SIZE;
+    const nr = pickRoster(size);
     setRoster(nr);
     rosterRef.current = nr;
-    monsRef.current = initialMons(nr);
+    monsRef.current = initialMons(nr, m);
     projectilesRef.current = [];
     popsRef.current = [];
-    setLog([{ id: idRef.current++, text: "New random battle! Last creature standing wins!", color: "var(--color-muted-foreground)" }]);
+    setLog([{ id: idRef.current++, text: m === "teams" ? "Team Battle! Red vs Blue — wipe the other team!" : "Free-for-all! Last creature standing wins!", color: "var(--color-muted-foreground)" }]);
     setStatus("fighting");
     setWinnerIdx(null);
+    setWinnerTeam(null);
     setRunning(true);
   };
 
