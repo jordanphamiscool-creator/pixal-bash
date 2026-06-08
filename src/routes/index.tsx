@@ -405,26 +405,38 @@ function Game() {
         <div>
           <h1 className="text-[10px] tracking-wider text-primary sm:text-sm">PIXEL POCKET BRAWL</h1>
           <p className="mt-1 text-[7px] text-muted-foreground sm:text-[9px]">
-            Random 5-Way · Custom Attacks · Evolve every 15s
+            {mode === "teams" ? "Team Battle · 3v3" : "Free-for-All · 5-Way"} · Evolve every 15s
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <div className="flex overflow-hidden rounded border-2 border-border">
+            <button
+              onClick={() => mode !== "ffa" && reset("ffa")}
+              className={`px-3 py-2 text-[8px] sm:text-[10px] ${mode === "ffa" ? "bg-primary text-primary-foreground" : "bg-muted hover:brightness-125"}`}
+            >FFA</button>
+            <button
+              onClick={() => mode !== "teams" && reset("teams")}
+              className={`px-3 py-2 text-[8px] sm:text-[10px] ${mode === "teams" ? "bg-primary text-primary-foreground" : "bg-muted hover:brightness-125"}`}
+            >Teams</button>
+          </div>
           <button onClick={() => setRunning((r) => !r)} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] hover:brightness-125 sm:text-[10px]">
             {running ? "Pause" : "Resume"}
           </button>
-          <button onClick={reset} className="rounded border-2 border-border bg-accent px-3 py-2 text-[8px] text-primary-foreground hover:brightness-110 sm:text-[10px]">
+          <button onClick={() => reset()} className="rounded border-2 border-border bg-accent px-3 py-2 text-[8px] text-primary-foreground hover:brightness-110 sm:text-[10px]">
             New Battle
           </button>
         </div>
       </header>
 
-      <div className="grid grid-cols-5 gap-2">
+      <div className={`grid gap-2 ${mode === "teams" ? "grid-cols-3 sm:grid-cols-6" : "grid-cols-5"}`}>
         {roster.map((r, i) => {
           const m = mons[i];
           const data = r.stages[m.stage];
           const dead = m.hp <= 0;
+          const teamCol = mode === "teams" ? TEAM_COLORS[m.team] : r.color;
           return (
-            <div key={r.key + i} className="rounded border-2 border-border bg-panel p-2 text-center" style={{ boxShadow: `inset 0 -3px 0 ${r.color}`, opacity: dead ? 0.45 : 1 }}>
+            <div key={r.key + i} className="rounded border-2 bg-panel p-2 text-center" style={{ borderColor: mode === "teams" ? teamCol : "var(--color-border)", boxShadow: `inset 0 -3px 0 ${r.color}`, opacity: dead ? 0.45 : 1 }}>
+              {mode === "teams" && <p className="text-[6px] sm:text-[7px]" style={{ color: teamCol }}>{TEAM_NAMES[m.team].split(" ")[0]}</p>}
               <p className="text-[7px] sm:text-[9px]" style={{ color: r.color }}>{dead ? "K.O." : `${data.name} L${m.stage + 1}`}</p>
               <p className="text-[6px] text-muted-foreground sm:text-[8px]">{data.ability}</p>
               <div className="mt-1 h-1.5 w-full overflow-hidden rounded border border-border bg-background">
