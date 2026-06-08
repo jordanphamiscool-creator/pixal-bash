@@ -192,11 +192,15 @@ function initialMons(roster: Line[], mode: Mode): MonState[] {
 }
 
 function Game() {
-  const [roster, setRoster] = useState<Line[]>(() => pickRoster());
+  const [mode, setMode] = useState<Mode>("ffa");
+  const modeRef = useRef(mode);
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+
+  const [roster, setRoster] = useState<Line[]>(() => pickRoster(FFA_SIZE));
   const rosterRef = useRef(roster);
   useEffect(() => { rosterRef.current = roster; }, [roster]);
 
-  const monsRef = useRef<MonState[]>(initialMons(roster));
+  const monsRef = useRef<MonState[]>(initialMons(roster, "ffa"));
   const projectilesRef = useRef<Projectile[]>([]);
   const popsRef = useRef<Pop[]>([]);
   const idRef = useRef(1);
@@ -207,6 +211,7 @@ function Game() {
     { id: 0, text: "Free-for-all! Last creature standing wins!", color: "var(--color-muted-foreground)" },
   ]);
   const [winnerIdx, setWinnerIdx] = useState<number | null>(null);
+  const [winnerTeam, setWinnerTeam] = useState<number | null>(null);
   const [status, setStatus] = useState<"fighting" | "ended">("fighting");
 
   useEffect(() => { runningRef.current = running; }, [running]);
