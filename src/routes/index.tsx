@@ -157,22 +157,34 @@ function effLabel(m: number): string {
   return "";
 }
 
-function pickRoster(): Line[] {
+function pickRoster(size: number): Line[] {
   const idx = [...POOL.keys()];
   for (let i = idx.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [idx[i], idx[j]] = [idx[j], idx[i]];
   }
-  return idx.slice(0, TEAM_SIZE).map((i) => POOL[i]);
+  return idx.slice(0, size).map((i) => POOL[i]);
 }
 
-function initialMons(roster: Line[]): MonState[] {
+function initialMons(roster: Line[], mode: Mode): MonState[] {
   return roster.map((_, i) => {
-    const a = (i / roster.length) * Math.PI * 2 + Math.random() * 0.4;
+    let pos: Vec;
+    let team: number;
+    if (mode === "teams") {
+      team = i < roster.length / 2 ? 0 : 1;
+      const teamIdx = team === 0 ? i : i - Math.ceil(roster.length / 2);
+      const teamCount = team === 0 ? Math.ceil(roster.length / 2) : Math.floor(roster.length / 2);
+      const x = team === 0 ? 120 : ARENA_W - 120;
+      const y = 80 + ((ARENA_H - 160) * (teamIdx + 0.5)) / teamCount;
+      pos = { x, y };
+    } else {
+      team = i;
+      const a = (i / roster.length) * Math.PI * 2 + Math.random() * 0.4;
+      pos = { x: ARENA_W / 2 + Math.cos(a) * 200, y: ARENA_H / 2 + Math.sin(a) * 180 };
+    }
     return {
-      pos: { x: ARENA_W / 2 + Math.cos(a) * 200, y: ARENA_H / 2 + Math.sin(a) * 180 },
-      vel: { x: rand(-30, 30), y: rand(-30, 30) },
-      hp: MON_MAX_HP, stage: 0,
+      pos, vel: { x: rand(-30, 30), y: rand(-30, 30) },
+      hp: MON_MAX_HP, stage: 0, team,
       lastAttack: -rand(0, ABILITY_COOLDOWN),
       evolveTimer: 0, hitFlash: 0, attackFlash: 0, evolveFlashUntil: 0,
     };
