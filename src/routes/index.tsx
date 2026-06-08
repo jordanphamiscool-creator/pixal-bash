@@ -271,8 +271,10 @@ function initialMons(roster: Line[], mode: Mode): MonState[] {
       pos, vel: { x: rand(-30, 30), y: rand(-30, 30) },
       hp: MON_MAX_HP, stage: 0, team,
       lastAttack: -rand(0, ABILITY_COOLDOWN),
+      lastSpecial: -rand(0, SPECIAL_COOLDOWN),
       evolveTimer: 0, hitFlash: 0, attackFlash: 0, evolveFlashUntil: 0,
     };
+
   });
 }
 
