@@ -448,9 +448,18 @@ function Game() {
       </div>
 
       <div className="flex items-center justify-between rounded border-2 border-border bg-panel px-3 py-2 text-[7px] sm:text-[9px]">
-        <span className="text-primary">ALIVE: {mons.filter((m) => m.hp > 0).length} / {roster.length}</span>
+        {mode === "teams" ? (
+          <span>
+            <span style={{ color: TEAM_COLORS[0] }}>RED {mons.filter((m) => m.hp > 0 && m.team === 0).length}</span>
+            <span className="mx-2 text-muted-foreground">vs</span>
+            <span style={{ color: TEAM_COLORS[1] }}>BLUE {mons.filter((m) => m.hp > 0 && m.team === 1).length}</span>
+          </span>
+        ) : (
+          <span className="text-primary">ALIVE: {mons.filter((m) => m.hp > 0).length} / {roster.length}</span>
+        )}
         <span className="text-muted-foreground">Next evolution in {minEvolveIn}s</span>
       </div>
+
 
       <div className="arena-wrap relative w-full overflow-hidden rounded-xl border-4 border-border" style={{ aspectRatio: `${ARENA_W} / ${ARENA_H}` }}>
         <div className="arena-grass absolute inset-0" />
