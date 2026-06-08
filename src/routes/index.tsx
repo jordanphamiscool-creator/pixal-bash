@@ -425,6 +425,27 @@ function Game() {
         pushLog(`${data.name} → ${r[tgt].stages[t.stage].name}: ${data.ability} ${crit ? "CRIT " : ""}${dmg}${effLabel(eff)}`, r[i].color);
       }
 
+      // Signature special move — every 7.5s for any Gen 1 Pokémon
+      const sp = SPECIALS[data.id];
+      if (sp && now - m.lastSpecial >= SPECIAL_COOLDOWN && dist <= ATTACK_RANGE + 120) {
+        m.lastSpecial = now;
+        m.attackFlash = now + 400;
+        const crit = Math.random() < 0.25;
+        const eff = typeMult(r[i].type, r[tgt].type);
+        const dmg = Math.round(sp.dmg * (crit ? 1.8 : 1) * eff * (0.9 + Math.random() * 0.2));
+        const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
+        projectilesRef.current.push({
+          id: idRef.current++,
+          fromIdx: i, targetIdx: tgt,
+          from: { ...m.pos }, pos: { ...m.pos }, angle: ang,
+          color: r[i].color, dmg, crit, kind: sp.kind,
+          bornAt: now, duration: sp.kind === "lightning" ? 240 : 500,
+        });
+        pushLog(`★ ${data.name} unleashed ${sp.name}! ${crit ? "CRIT " : ""}${dmg}${effLabel(eff)}`, r[i].color);
+      }
+
+
+
       if (m.hitFlash && now > m.hitFlash) m.hitFlash = 0;
       if (m.attackFlash && now > m.attackFlash) m.attackFlash = 0;
     });
