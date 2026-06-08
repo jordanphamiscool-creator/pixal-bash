@@ -535,7 +535,20 @@ function Game() {
         {status === "ended" && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70">
             <div className="rounded border-2 border-border bg-panel px-5 py-4 text-center">
-              {winnerIdx !== null ? (
+              {winnerTeam !== null ? (
+                <>
+                  <p className="text-[10px] sm:text-sm" style={{ color: TEAM_COLORS[winnerTeam] }}>
+                    {TEAM_NAMES[winnerTeam]} WINS!
+                  </p>
+                  <div className="my-2 flex justify-center gap-2">
+                    {mons.map((m, i) => m.team === winnerTeam && m.hp > 0 ? (
+                      <img key={i} src={SPRITE(roster[i].stages[m.stage].id)} alt={roster[i].stages[m.stage].name}
+                        className="h-16 w-16"
+                        style={{ imageRendering: "pixelated", filter: `drop-shadow(0 0 10px ${TEAM_COLORS[winnerTeam]})` }} />
+                    ) : null)}
+                  </div>
+                </>
+              ) : winnerIdx !== null ? (
                 <>
                   <p className="text-[10px] sm:text-sm" style={{ color: roster[winnerIdx].color }}>
                     WINNER: {roster[winnerIdx].stages[mons[winnerIdx].stage].name}
@@ -547,7 +560,7 @@ function Game() {
               ) : (
                 <p className="text-[10px] sm:text-sm text-muted-foreground">DRAW</p>
               )}
-              <button onClick={reset} className="mt-2 rounded border-2 border-border bg-primary px-3 py-2 text-[9px] text-primary-foreground hover:brightness-110 sm:text-[10px]">
+              <button onClick={() => reset()} className="mt-2 rounded border-2 border-border bg-primary px-3 py-2 text-[9px] text-primary-foreground hover:brightness-110 sm:text-[10px]">
                 New Battle
               </button>
             </div>
