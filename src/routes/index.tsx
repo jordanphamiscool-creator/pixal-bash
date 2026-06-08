@@ -107,7 +107,12 @@ const ARENA_W = 800;
 const ARENA_H = 540;
 const MON_R = 26;
 const ATTACK_RANGE = 260;
-const TEAM_SIZE = 5;
+const FFA_SIZE = 5;
+const TEAM_SIZE = 6; // 3v3 in team mode
+const TEAM_COLORS = ["#ff5566", "#4ea8ff"];
+const TEAM_NAMES = ["RED TEAM", "BLUE TEAM"];
+
+type Mode = "ffa" | "teams";
 
 type Vec = { x: number; y: number };
 type MonState = {
