@@ -240,6 +240,7 @@ function Game() {
     let best = -1; let bd = Infinity;
     for (let j = 0; j < mons.length; j++) {
       if (j === i || mons[j].hp <= 0) continue;
+      if (modeRef.current === "teams" && mons[j].team === mons[i].team) continue;
       const d = Math.hypot(mons[j].pos.x - mons[i].pos.x, mons[j].pos.y - mons[i].pos.y);
       if (d < bd) { bd = d; best = j; }
     }
@@ -248,15 +249,32 @@ function Game() {
 
   const checkEnd = () => {
     const mons = monsRef.current;
+    const r = rosterRef.current;
+    if (modeRef.current === "teams") {
+      const aliveByTeam = [0, 0];
+      mons.forEach((m) => { if (m.hp > 0) aliveByTeam[m.team]++; });
+      const teamsLeft = aliveByTeam.filter((c) => c > 0).length;
+      if (teamsLeft <= 1) {
+        const wTeam = aliveByTeam.findIndex((c) => c > 0);
+        setWinnerTeam(wTeam === -1 ? null : wTeam);
+        setWinnerIdx(null);
+        setStatus("ended");
+        if (wTeam >= 0) pushLog(`${TEAM_NAMES[wTeam]} WINS!`, TEAM_COLORS[wTeam]);
+        else pushLog("Draw! Nobody survived.", "var(--color-muted-foreground)");
+      }
+      return;
+    }
     const alive = mons.map((m, i) => (m.hp > 0 ? i : -1)).filter((i) => i >= 0);
     if (alive.length <= 1) {
       const w = alive[0] ?? null;
       setWinnerIdx(w);
+      setWinnerTeam(null);
       setStatus("ended");
-      if (w !== null) pushLog(`${rosterRef.current[w].stages[mons[w].stage].name} WINS!`, rosterRef.current[w].color);
+      if (w !== null) pushLog(`${r[w].stages[mons[w].stage].name} WINS!`, r[w].color);
       else pushLog("Draw! Nobody survived.", "var(--color-muted-foreground)");
     }
   };
+
 
   const step = (dt: number, now: number) => {
     const mons = monsRef.current;
