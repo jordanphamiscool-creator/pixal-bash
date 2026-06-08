@@ -107,11 +107,17 @@ const ARENA_W = 800;
 const ARENA_H = 540;
 const MON_R = 26;
 const ATTACK_RANGE = 260;
-const TEAM_SIZE = 5;
+const FFA_SIZE = 5;
+const TEAM_SIZE = 6; // 3v3 in team mode
+const TEAM_COLORS = ["#ff5566", "#4ea8ff"];
+const TEAM_NAMES = ["RED TEAM", "BLUE TEAM"];
+
+type Mode = "ffa" | "teams";
 
 type Vec = { x: number; y: number };
 type MonState = {
   pos: Vec; vel: Vec; hp: number; stage: number;
+  team: number;
   lastAttack: number; evolveTimer: number;
   hitFlash: number; attackFlash: number; evolveFlashUntil: number;
 };
@@ -151,22 +157,34 @@ function effLabel(m: number): string {
   return "";
 }
 
-function pickRoster(): Line[] {
+function pickRoster(size: number): Line[] {
   const idx = [...POOL.keys()];
   for (let i = idx.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [idx[i], idx[j]] = [idx[j], idx[i]];
   }
-  return idx.slice(0, TEAM_SIZE).map((i) => POOL[i]);
+  return idx.slice(0, size).map((i) => POOL[i]);
 }
 
-function initialMons(roster: Line[]): MonState[] {
+function initialMons(roster: Line[], mode: Mode): MonState[] {
   return roster.map((_, i) => {
-    const a = (i / roster.length) * Math.PI * 2 + Math.random() * 0.4;
+    let pos: Vec;
+    let team: number;
+    if (mode === "teams") {
+      team = i < roster.length / 2 ? 0 : 1;
+      const teamIdx = team === 0 ? i : i - Math.ceil(roster.length / 2);
+      const teamCount = team === 0 ? Math.ceil(roster.length / 2) : Math.floor(roster.length / 2);
+      const x = team === 0 ? 120 : ARENA_W - 120;
+      const y = 80 + ((ARENA_H - 160) * (teamIdx + 0.5)) / teamCount;
+      pos = { x, y };
+    } else {
+      team = i;
+      const a = (i / roster.length) * Math.PI * 2 + Math.random() * 0.4;
+      pos = { x: ARENA_W / 2 + Math.cos(a) * 200, y: ARENA_H / 2 + Math.sin(a) * 180 };
+    }
     return {
-      pos: { x: ARENA_W / 2 + Math.cos(a) * 200, y: ARENA_H / 2 + Math.sin(a) * 180 },
-      vel: { x: rand(-30, 30), y: rand(-30, 30) },
-      hp: MON_MAX_HP, stage: 0,
+      pos, vel: { x: rand(-30, 30), y: rand(-30, 30) },
+      hp: MON_MAX_HP, stage: 0, team,
       lastAttack: -rand(0, ABILITY_COOLDOWN),
       evolveTimer: 0, hitFlash: 0, attackFlash: 0, evolveFlashUntil: 0,
     };
@@ -174,11 +192,15 @@ function initialMons(roster: Line[]): MonState[] {
 }
 
 function Game() {
-  const [roster, setRoster] = useState<Line[]>(() => pickRoster());
+  const [mode, setMode] = useState<Mode>("ffa");
+  const modeRef = useRef(mode);
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+
+  const [roster, setRoster] = useState<Line[]>(() => pickRoster(FFA_SIZE));
   const rosterRef = useRef(roster);
   useEffect(() => { rosterRef.current = roster; }, [roster]);
 
-  const monsRef = useRef<MonState[]>(initialMons(roster));
+  const monsRef = useRef<MonState[]>(initialMons(roster, "ffa"));
   const projectilesRef = useRef<Projectile[]>([]);
   const popsRef = useRef<Pop[]>([]);
   const idRef = useRef(1);
@@ -189,6 +211,7 @@ function Game() {
     { id: 0, text: "Free-for-all! Last creature standing wins!", color: "var(--color-muted-foreground)" },
   ]);
   const [winnerIdx, setWinnerIdx] = useState<number | null>(null);
+  const [winnerTeam, setWinnerTeam] = useState<number | null>(null);
   const [status, setStatus] = useState<"fighting" | "ended">("fighting");
 
   useEffect(() => { runningRef.current = running; }, [running]);
@@ -217,6 +240,7 @@ function Game() {
     let best = -1; let bd = Infinity;
     for (let j = 0; j < mons.length; j++) {
       if (j === i || mons[j].hp <= 0) continue;
+      if (modeRef.current === "teams" && mons[j].team === mons[i].team) continue;
       const d = Math.hypot(mons[j].pos.x - mons[i].pos.x, mons[j].pos.y - mons[i].pos.y);
       if (d < bd) { bd = d; best = j; }
     }
@@ -225,15 +249,32 @@ function Game() {
 
   const checkEnd = () => {
     const mons = monsRef.current;
+    const r = rosterRef.current;
+    if (modeRef.current === "teams") {
+      const aliveByTeam = [0, 0];
+      mons.forEach((m) => { if (m.hp > 0) aliveByTeam[m.team]++; });
+      const teamsLeft = aliveByTeam.filter((c) => c > 0).length;
+      if (teamsLeft <= 1) {
+        const wTeam = aliveByTeam.findIndex((c) => c > 0);
+        setWinnerTeam(wTeam === -1 ? null : wTeam);
+        setWinnerIdx(null);
+        setStatus("ended");
+        if (wTeam >= 0) pushLog(`${TEAM_NAMES[wTeam]} WINS!`, TEAM_COLORS[wTeam]);
+        else pushLog("Draw! Nobody survived.", "var(--color-muted-foreground)");
+      }
+      return;
+    }
     const alive = mons.map((m, i) => (m.hp > 0 ? i : -1)).filter((i) => i >= 0);
     if (alive.length <= 1) {
       const w = alive[0] ?? null;
       setWinnerIdx(w);
+      setWinnerTeam(null);
       setStatus("ended");
-      if (w !== null) pushLog(`${rosterRef.current[w].stages[mons[w].stage].name} WINS!`, rosterRef.current[w].color);
+      if (w !== null) pushLog(`${r[w].stages[mons[w].stage].name} WINS!`, r[w].color);
       else pushLog("Draw! Nobody survived.", "var(--color-muted-foreground)");
     }
   };
+
 
   const step = (dt: number, now: number) => {
     const mons = monsRef.current;
@@ -331,16 +372,21 @@ function Game() {
     if (killed) checkEnd();
   };
 
-  const reset = () => {
-    const nr = pickRoster();
+  const reset = (newMode?: Mode) => {
+    const m = newMode ?? modeRef.current;
+    modeRef.current = m;
+    setMode(m);
+    const size = m === "teams" ? TEAM_SIZE : FFA_SIZE;
+    const nr = pickRoster(size);
     setRoster(nr);
     rosterRef.current = nr;
-    monsRef.current = initialMons(nr);
+    monsRef.current = initialMons(nr, m);
     projectilesRef.current = [];
     popsRef.current = [];
-    setLog([{ id: idRef.current++, text: "New random battle! Last creature standing wins!", color: "var(--color-muted-foreground)" }]);
+    setLog([{ id: idRef.current++, text: m === "teams" ? "Team Battle! Red vs Blue — wipe the other team!" : "Free-for-all! Last creature standing wins!", color: "var(--color-muted-foreground)" }]);
     setStatus("fighting");
     setWinnerIdx(null);
+    setWinnerTeam(null);
     setRunning(true);
   };
 
@@ -359,26 +405,38 @@ function Game() {
         <div>
           <h1 className="text-[10px] tracking-wider text-primary sm:text-sm">PIXEL POCKET BRAWL</h1>
           <p className="mt-1 text-[7px] text-muted-foreground sm:text-[9px]">
-            Random 5-Way · Custom Attacks · Evolve every 15s
+            {mode === "teams" ? "Team Battle · 3v3" : "Free-for-All · 5-Way"} · Evolve every 15s
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <div className="flex overflow-hidden rounded border-2 border-border">
+            <button
+              onClick={() => mode !== "ffa" && reset("ffa")}
+              className={`px-3 py-2 text-[8px] sm:text-[10px] ${mode === "ffa" ? "bg-primary text-primary-foreground" : "bg-muted hover:brightness-125"}`}
+            >FFA</button>
+            <button
+              onClick={() => mode !== "teams" && reset("teams")}
+              className={`px-3 py-2 text-[8px] sm:text-[10px] ${mode === "teams" ? "bg-primary text-primary-foreground" : "bg-muted hover:brightness-125"}`}
+            >Teams</button>
+          </div>
           <button onClick={() => setRunning((r) => !r)} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] hover:brightness-125 sm:text-[10px]">
             {running ? "Pause" : "Resume"}
           </button>
-          <button onClick={reset} className="rounded border-2 border-border bg-accent px-3 py-2 text-[8px] text-primary-foreground hover:brightness-110 sm:text-[10px]">
+          <button onClick={() => reset()} className="rounded border-2 border-border bg-accent px-3 py-2 text-[8px] text-primary-foreground hover:brightness-110 sm:text-[10px]">
             New Battle
           </button>
         </div>
       </header>
 
-      <div className="grid grid-cols-5 gap-2">
+      <div className={`grid gap-2 ${mode === "teams" ? "grid-cols-3 sm:grid-cols-6" : "grid-cols-5"}`}>
         {roster.map((r, i) => {
           const m = mons[i];
           const data = r.stages[m.stage];
           const dead = m.hp <= 0;
+          const teamCol = mode === "teams" ? TEAM_COLORS[m.team] : r.color;
           return (
-            <div key={r.key + i} className="rounded border-2 border-border bg-panel p-2 text-center" style={{ boxShadow: `inset 0 -3px 0 ${r.color}`, opacity: dead ? 0.45 : 1 }}>
+            <div key={r.key + i} className="rounded border-2 bg-panel p-2 text-center" style={{ borderColor: mode === "teams" ? teamCol : "var(--color-border)", boxShadow: `inset 0 -3px 0 ${r.color}`, opacity: dead ? 0.45 : 1 }}>
+              {mode === "teams" && <p className="text-[6px] sm:text-[7px]" style={{ color: teamCol }}>{TEAM_NAMES[m.team].split(" ")[0]}</p>}
               <p className="text-[7px] sm:text-[9px]" style={{ color: r.color }}>{dead ? "K.O." : `${data.name} L${m.stage + 1}`}</p>
               <p className="text-[6px] text-muted-foreground sm:text-[8px]">{data.ability}</p>
               <div className="mt-1 h-1.5 w-full overflow-hidden rounded border border-border bg-background">
@@ -390,9 +448,18 @@ function Game() {
       </div>
 
       <div className="flex items-center justify-between rounded border-2 border-border bg-panel px-3 py-2 text-[7px] sm:text-[9px]">
-        <span className="text-primary">ALIVE: {mons.filter((m) => m.hp > 0).length} / {roster.length}</span>
+        {mode === "teams" ? (
+          <span>
+            <span style={{ color: TEAM_COLORS[0] }}>RED {mons.filter((m) => m.hp > 0 && m.team === 0).length}</span>
+            <span className="mx-2 text-muted-foreground">vs</span>
+            <span style={{ color: TEAM_COLORS[1] }}>BLUE {mons.filter((m) => m.hp > 0 && m.team === 1).length}</span>
+          </span>
+        ) : (
+          <span className="text-primary">ALIVE: {mons.filter((m) => m.hp > 0).length} / {roster.length}</span>
+        )}
         <span className="text-muted-foreground">Next evolution in {minEvolveIn}s</span>
       </div>
+
 
       <div className="arena-wrap relative w-full overflow-hidden rounded-xl border-4 border-border" style={{ aspectRatio: `${ARENA_W} / ${ARENA_H}` }}>
         <div className="arena-grass absolute inset-0" />
@@ -477,7 +544,20 @@ function Game() {
         {status === "ended" && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70">
             <div className="rounded border-2 border-border bg-panel px-5 py-4 text-center">
-              {winnerIdx !== null ? (
+              {winnerTeam !== null ? (
+                <>
+                  <p className="text-[10px] sm:text-sm" style={{ color: TEAM_COLORS[winnerTeam] }}>
+                    {TEAM_NAMES[winnerTeam]} WINS!
+                  </p>
+                  <div className="my-2 flex justify-center gap-2">
+                    {mons.map((m, i) => m.team === winnerTeam && m.hp > 0 ? (
+                      <img key={i} src={SPRITE(roster[i].stages[m.stage].id)} alt={roster[i].stages[m.stage].name}
+                        className="h-16 w-16"
+                        style={{ imageRendering: "pixelated", filter: `drop-shadow(0 0 10px ${TEAM_COLORS[winnerTeam]})` }} />
+                    ) : null)}
+                  </div>
+                </>
+              ) : winnerIdx !== null ? (
                 <>
                   <p className="text-[10px] sm:text-sm" style={{ color: roster[winnerIdx].color }}>
                     WINNER: {roster[winnerIdx].stages[mons[winnerIdx].stage].name}
@@ -489,7 +569,7 @@ function Game() {
               ) : (
                 <p className="text-[10px] sm:text-sm text-muted-foreground">DRAW</p>
               )}
-              <button onClick={reset} className="mt-2 rounded border-2 border-border bg-primary px-3 py-2 text-[9px] text-primary-foreground hover:brightness-110 sm:text-[10px]">
+              <button onClick={() => reset()} className="mt-2 rounded border-2 border-border bg-primary px-3 py-2 text-[9px] text-primary-foreground hover:brightness-110 sm:text-[10px]">
                 New Battle
               </button>
             </div>
