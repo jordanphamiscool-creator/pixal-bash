@@ -99,8 +99,91 @@ const POOL: Line[] = [
   ]},
 ];
 
+// Signature special abilities for every Gen 1 Pokémon (1–151).
+// Triggers on a 7.5s cooldown, independent of the normal attack.
+type Special = { name: string; kind: AttackKind; dmg: number };
+const SPECIALS: Record<number, Special> = {
+  1:{name:"Vine Whip",kind:"leaf",dmg:18}, 2:{name:"Razor Leaf",kind:"leaf",dmg:22}, 3:{name:"Solar Beam",kind:"leaf",dmg:34},
+  4:{name:"Ember",kind:"fireball",dmg:18}, 5:{name:"Flamethrower",kind:"fireball",dmg:24}, 6:{name:"Blast Burn",kind:"fireball",dmg:36},
+  7:{name:"Water Gun",kind:"waterjet",dmg:17}, 8:{name:"Bubble Beam",kind:"waterjet",dmg:22}, 9:{name:"Hydro Pump",kind:"waterjet",dmg:34},
+  10:{name:"Tackle",kind:"bugbuzz",dmg:12}, 11:{name:"Harden",kind:"bugbuzz",dmg:10}, 12:{name:"Bug Buzz",kind:"bugbuzz",dmg:28},
+  13:{name:"Poison Sting",kind:"bugbuzz",dmg:14}, 14:{name:"Harden",kind:"bugbuzz",dmg:10}, 15:{name:"Twineedle",kind:"bugbuzz",dmg:26},
+  16:{name:"Gust",kind:"fairywind",dmg:14}, 17:{name:"Wing Attack",kind:"fairywind",dmg:22}, 18:{name:"Hurricane",kind:"fairywind",dmg:32},
+  19:{name:"Quick Attack",kind:"punch",dmg:16}, 20:{name:"Hyper Fang",kind:"punch",dmg:26},
+  21:{name:"Peck",kind:"fairywind",dmg:16}, 22:{name:"Drill Peck",kind:"fairywind",dmg:26},
+  23:{name:"Wrap",kind:"shadowball",dmg:14}, 24:{name:"Poison Fang",kind:"shadowball",dmg:24},
+  25:{name:"Thunderbolt",kind:"lightning",dmg:26}, 26:{name:"Thunder",kind:"lightning",dmg:36},
+  27:{name:"Sand Attack",kind:"rock",dmg:14}, 28:{name:"Slash",kind:"rock",dmg:24},
+  29:{name:"Scratch",kind:"punch",dmg:14}, 30:{name:"Bite",kind:"punch",dmg:20}, 31:{name:"Earth Power",kind:"rock",dmg:32},
+  32:{name:"Horn Attack",kind:"punch",dmg:14}, 33:{name:"Horn Attack",kind:"punch",dmg:20}, 34:{name:"Megahorn",kind:"punch",dmg:34},
+  35:{name:"Pound",kind:"fairywind",dmg:16}, 36:{name:"Moonblast",kind:"fairywind",dmg:30},
+  37:{name:"Ember",kind:"fireball",dmg:18}, 38:{name:"Flamethrower",kind:"fireball",dmg:28},
+  39:{name:"Sing",kind:"fairywind",dmg:14}, 40:{name:"Body Slam",kind:"fairywind",dmg:26},
+  41:{name:"Leech Life",kind:"shadowball",dmg:16}, 42:{name:"Air Cutter",kind:"fairywind",dmg:24},
+  43:{name:"Acid",kind:"leaf",dmg:16}, 44:{name:"Mega Drain",kind:"leaf",dmg:22}, 45:{name:"Petal Dance",kind:"leaf",dmg:32},
+  46:{name:"Scratch",kind:"bugbuzz",dmg:14}, 47:{name:"Spore",kind:"bugbuzz",dmg:24},
+  48:{name:"Confusion",kind:"psybeam",dmg:16}, 49:{name:"Psybeam",kind:"psybeam",dmg:26},
+  50:{name:"Dig",kind:"rock",dmg:18}, 51:{name:"Earthquake",kind:"rock",dmg:32},
+  52:{name:"Pay Day",kind:"punch",dmg:16}, 53:{name:"Slash",kind:"punch",dmg:24},
+  54:{name:"Water Pulse",kind:"waterjet",dmg:18}, 55:{name:"Hydro Pump",kind:"waterjet",dmg:30},
+  56:{name:"Karate Chop",kind:"punch",dmg:18}, 57:{name:"Cross Chop",kind:"punch",dmg:28},
+  58:{name:"Bite",kind:"fireball",dmg:18}, 59:{name:"Fire Blast",kind:"fireball",dmg:34},
+  60:{name:"Bubble",kind:"waterjet",dmg:14}, 61:{name:"Water Pulse",kind:"waterjet",dmg:22}, 62:{name:"Submission",kind:"punch",dmg:28},
+  63:{name:"Confusion",kind:"psybeam",dmg:16}, 64:{name:"Psybeam",kind:"psybeam",dmg:24}, 65:{name:"Psychic",kind:"psybeam",dmg:34},
+  66:{name:"Karate Chop",kind:"punch",dmg:18}, 67:{name:"Cross Chop",kind:"punch",dmg:26}, 68:{name:"Dynamic Punch",kind:"punch",dmg:34},
+  69:{name:"Vine Whip",kind:"leaf",dmg:16}, 70:{name:"Razor Leaf",kind:"leaf",dmg:22}, 71:{name:"Leaf Blade",kind:"leaf",dmg:30},
+  72:{name:"Acid",kind:"waterjet",dmg:18}, 73:{name:"Hydro Pump",kind:"waterjet",dmg:30},
+  74:{name:"Rock Throw",kind:"rock",dmg:18}, 75:{name:"Rock Slide",kind:"rock",dmg:26}, 76:{name:"Stone Edge",kind:"rock",dmg:34},
+  77:{name:"Ember",kind:"fireball",dmg:18}, 78:{name:"Fire Blast",kind:"fireball",dmg:32},
+  79:{name:"Confusion",kind:"psybeam",dmg:18}, 80:{name:"Psychic",kind:"psybeam",dmg:30},
+  81:{name:"Thunder Shock",kind:"lightning",dmg:18}, 82:{name:"Zap Cannon",kind:"lightning",dmg:32},
+  83:{name:"Cut",kind:"punch",dmg:20},
+  84:{name:"Peck",kind:"fairywind",dmg:16}, 85:{name:"Tri Attack",kind:"fairywind",dmg:28},
+  86:{name:"Aurora Beam",kind:"iceshard",dmg:20}, 87:{name:"Ice Beam",kind:"iceshard",dmg:30},
+  88:{name:"Sludge",kind:"shadowball",dmg:20}, 89:{name:"Sludge Bomb",kind:"shadowball",dmg:30},
+  90:{name:"Clamp",kind:"iceshard",dmg:18}, 91:{name:"Ice Beam",kind:"iceshard",dmg:30},
+  92:{name:"Lick",kind:"shadowball",dmg:16}, 93:{name:"Shadow Punch",kind:"shadowball",dmg:24}, 94:{name:"Shadow Ball",kind:"shadowball",dmg:32},
+  95:{name:"Rock Throw",kind:"rock",dmg:22},
+  96:{name:"Hypnosis",kind:"psybeam",dmg:16}, 97:{name:"Psychic",kind:"psybeam",dmg:30},
+  98:{name:"Bubble",kind:"waterjet",dmg:14}, 99:{name:"Crabhammer",kind:"waterjet",dmg:28},
+  100:{name:"Spark",kind:"lightning",dmg:18}, 101:{name:"Thunder",kind:"lightning",dmg:30},
+  102:{name:"Barrage",kind:"leaf",dmg:18}, 103:{name:"Egg Bomb",kind:"leaf",dmg:30},
+  104:{name:"Bone Club",kind:"rock",dmg:20}, 105:{name:"Bonemerang",kind:"rock",dmg:28},
+  106:{name:"High Jump Kick",kind:"punch",dmg:32}, 107:{name:"Mach Punch",kind:"punch",dmg:26},
+  108:{name:"Lick",kind:"punch",dmg:20},
+  109:{name:"Smog",kind:"shadowball",dmg:18}, 110:{name:"Sludge Bomb",kind:"shadowball",dmg:30},
+  111:{name:"Horn Attack",kind:"rock",dmg:20}, 112:{name:"Earthquake",kind:"rock",dmg:32},
+  113:{name:"Soft-Boiled",kind:"fairywind",dmg:14},
+  114:{name:"Vine Whip",kind:"leaf",dmg:22},
+  115:{name:"Comet Punch",kind:"punch",dmg:26},
+  116:{name:"Bubble",kind:"waterjet",dmg:16}, 117:{name:"Water Pulse",kind:"waterjet",dmg:26},
+  118:{name:"Horn Attack",kind:"waterjet",dmg:18}, 119:{name:"Waterfall",kind:"waterjet",dmg:28},
+  120:{name:"Swift",kind:"psybeam",dmg:20}, 121:{name:"Psybeam",kind:"psybeam",dmg:30},
+  122:{name:"Psychic",kind:"psybeam",dmg:30},
+  123:{name:"Slash",kind:"bugbuzz",dmg:26},
+  124:{name:"Ice Punch",kind:"iceshard",dmg:28},
+  125:{name:"Thunder Punch",kind:"lightning",dmg:28},
+  126:{name:"Fire Punch",kind:"fireball",dmg:28},
+  127:{name:"Vice Grip",kind:"bugbuzz",dmg:24},
+  128:{name:"Take Down",kind:"punch",dmg:28},
+  129:{name:"Splash",kind:"waterjet",dmg:4}, 130:{name:"Hydro Pump",kind:"waterjet",dmg:36},
+  131:{name:"Blizzard",kind:"iceshard",dmg:34},
+  132:{name:"Transform",kind:"fairywind",dmg:16},
+  133:{name:"Tackle",kind:"punch",dmg:14},
+  134:{name:"Hydro Pump",kind:"waterjet",dmg:32}, 135:{name:"Thunder",kind:"lightning",dmg:32}, 136:{name:"Fire Spin",kind:"fireball",dmg:32},
+  137:{name:"Tri Attack",kind:"psybeam",dmg:24},
+  138:{name:"Water Gun",kind:"waterjet",dmg:18}, 139:{name:"Hydro Pump",kind:"waterjet",dmg:30},
+  140:{name:"Aqua Jet",kind:"waterjet",dmg:20}, 141:{name:"Slash",kind:"rock",dmg:28},
+  142:{name:"Sky Attack",kind:"rock",dmg:34},
+  143:{name:"Body Slam",kind:"punch",dmg:30},
+  144:{name:"Blizzard",kind:"iceshard",dmg:44}, 145:{name:"Thunder",kind:"lightning",dmg:44}, 146:{name:"Sky Attack",kind:"fireball",dmg:44},
+  147:{name:"Twister",kind:"dragonpulse",dmg:18}, 148:{name:"Dragon Breath",kind:"dragonpulse",dmg:26}, 149:{name:"Hyper Beam",kind:"dragonpulse",dmg:38},
+  150:{name:"Psystrike",kind:"psybeam",dmg:48}, 151:{name:"Aura Sphere",kind:"fairywind",dmg:40},
+};
+
 const MON_MAX_HP = 120;
 const ABILITY_COOLDOWN = 5000;
+const SPECIAL_COOLDOWN = 7500;
 const EVOLVE_INTERVAL = 15000;
 const EVOLVE_FLASH_MS = 1400;
 const ARENA_W = 800;
@@ -111,6 +194,7 @@ const FFA_SIZE = 5;
 const TEAM_SIZE = 6; // 3v3 in team mode
 const TEAM_COLORS = ["#ff5566", "#4ea8ff"];
 const TEAM_NAMES = ["RED TEAM", "BLUE TEAM"];
+
 
 type Mode = "ffa" | "teams";
 
