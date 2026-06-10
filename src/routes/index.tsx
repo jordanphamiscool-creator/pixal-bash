@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Pixel Pocket Brawl — All 1025 + Mega & Gigantamax" },
-      { name: "description", content: "Top-down auto-battler with the full Pokédex, Mega & Gigantamax forms, betting, picker lobby, cries, and stat-driven combat." },
+      { title: "Pixel Pocket Brawl — Full Pokédex Auto-Battler" },
+      { name: "description", content: "Top-down auto-battler with all 1025 Pokémon, Mega/Gigantamax forms, betting, shop, custom teams, and pause-and-drag." },
     ],
   }),
   component: Game,
@@ -17,28 +17,24 @@ export const Route = createFileRoute("/")({
 type ElementType = "normal" | "fire" | "water" | "grass" | "electric" | "psychic" | "rock" | "ground" | "flying" | "ice" | "ghost" | "dragon" | "dark" | "steel" | "fighting" | "bug" | "fairy" | "poison";
 type AttackKind = "fireball" | "waterjet" | "leaf" | "lightning" | "psybeam" | "rock" | "iceshard" | "shadowball" | "dragonpulse" | "punch" | "bugbuzz" | "fairywind";
 type Mode = "ffa" | "teams";
-type Screen = "lobby" | "battle";
+type Screen = "lobby" | "battle" | "shop";
 
-// A fully-resolved mon ready for combat
 type MonData = {
-  uid: string;            // unique per battle slot
-  id: number;             // pokeapi id (may be a form id like 10034 for mega)
-  speciesId: number;      // base species id (for cries)
-  name: string;           // display name
+  uid: string;
+  id: number;
+  speciesId: number;
+  name: string;
   type: ElementType;
   color: string;
   sprite: string;
   cry: string | null;
-  // stats (scaled 0..1-ish from base stats)
   baseHp: number; baseAtk: number; baseDef: number; baseSpd: number;
-  // signature move
   signature: { name: string; kind: AttackKind; dmg: number };
-  // basic move
   basic: { name: string; kind: AttackKind; dmg: number };
-  // evolution metadata (random mode only)
   evolveTo?: MonData;
   isMega?: boolean;
   isGmax?: boolean;
+  isRegional?: boolean;
 };
 
 type Vec = { x: number; y: number };
@@ -48,6 +44,7 @@ type MonState = {
   lastAttack: number; lastSpecial: number; evolveTimer: number;
   hitFlash: number; attackFlash: number; evolveFlashUntil: number;
   data: MonData;
+  evolveEnabled: boolean;
 };
 type Projectile = {
   id: number; fromIdx: number; targetIdx: number;
@@ -58,16 +55,19 @@ type Projectile = {
 type Pop = { id: number; x: number; y: number; value: number; crit: boolean; bornAt: number; color: string };
 type LogEntry = { id: number; text: string; color: string };
 
+// Custom-mode pick: choose a Pokémon, set team, and optionally let it evolve
+type Pick = { mon: MonData; team: number; evolve: boolean };
+
 // ============================================================
 // Constants
 // ============================================================
 const ARENA_W = 800, ARENA_H = 540, MON_R = 26, ATTACK_RANGE = 260;
-const ABILITY_COOLDOWN_BASE = 1800; // ms — scaled by speed
-const SPECIAL_COOLDOWN_BASE = 7500;
-const EVOLVE_INTERVAL = 15000;
+const ABILITY_COOLDOWN_BASE = 2000;
+const SPECIAL_COOLDOWN_BASE = 8000;
 const EVOLVE_FLASH_MS = 1400;
 const TEAM_COLORS = ["#ff5566", "#4ea8ff"];
 const TEAM_NAMES = ["RED TEAM", "BLUE TEAM"];
+const STARTING_COINS = 250;
 
 const TYPE_COLORS: Record<ElementType, string> = {
   normal: "#c8c4a8", fire: "#ff7a3d", water: "#4ea8ff", grass: "#6bd36b",
@@ -76,7 +76,6 @@ const TYPE_COLORS: Record<ElementType, string> = {
   dark: "#7a6b5e", steel: "#b8b8c8", fighting: "#e88a4f", bug: "#a4d850",
   fairy: "#ffb6e0", poison: "#b86ec8",
 };
-
 const TYPE_KIND: Record<ElementType, AttackKind> = {
   normal: "punch", fire: "fireball", water: "waterjet", grass: "leaf",
   electric: "lightning", psychic: "psybeam", rock: "rock", ground: "rock",
@@ -84,8 +83,6 @@ const TYPE_KIND: Record<ElementType, AttackKind> = {
   dark: "shadowball", steel: "punch", fighting: "punch", bug: "bugbuzz",
   fairy: "fairywind", poison: "shadowball",
 };
-
-// Generic move-name pools per type for fallback (used when no signature is curated)
 const GENERIC_MOVES: Record<ElementType, [string, string]> = {
   normal: ["Tackle", "Hyper Beam"], fire: ["Ember", "Flamethrower"],
   water: ["Water Gun", "Hydro Pump"], grass: ["Vine Whip", "Solar Beam"],
@@ -97,8 +94,6 @@ const GENERIC_MOVES: Record<ElementType, [string, string]> = {
   fighting: ["Karate Chop", "Close Combat"], bug: ["Bug Bite", "Bug Buzz"],
   fairy: ["Fairy Wind", "Moonblast"], poison: ["Acid", "Sludge Bomb"],
 };
-
-// Type effectiveness chart (attacker → defender)
 const TYPE_CHART: Partial<Record<ElementType, Partial<Record<ElementType, number>>>> = {
   fire: { grass: 2, ice: 2, bug: 2, steel: 2, water: 0.5, fire: 0.5, rock: 0.5, dragon: 0.5 },
   water: { fire: 2, rock: 2, ground: 2, water: 0.5, grass: 0.5, dragon: 0.5 },
@@ -119,30 +114,113 @@ const TYPE_CHART: Partial<Record<ElementType, Partial<Record<ElementType, number
   poison: { grass: 2, fairy: 2, poison: 0.5, ground: 0.5, rock: 0.5, ghost: 0.5, steel: 0 },
   normal: { rock: 0.5, ghost: 0, steel: 0.5 },
 };
-function typeMult(att: ElementType, def: ElementType): number {
-  return TYPE_CHART[att]?.[def] ?? 1;
-}
+function typeMult(a: ElementType, d: ElementType) { return TYPE_CHART[a]?.[d] ?? 1; }
 function effLabel(m: number) {
   if (m === 0) return " (no effect)";
   if (m >= 2) return " — super effective!";
   if (m <= 0.5) return " — not very effective";
   return "";
 }
-
 function rand(min: number, max: number) { return Math.random() * (max - min) + min; }
-function titleCase(s: string) {
-  return s.split("-").map((w) => w[0] ? w[0].toUpperCase() + w.slice(1) : w).join(" ");
+function titleCase(s: string) { return s.split("-").map((w) => w[0] ? w[0].toUpperCase() + w.slice(1) : w).join(" "); }
+function slugify(s: string) { return s.toLowerCase().replace(/[^a-z0-9-]/g, ""); }
+
+// ============================================================
+// Generation ranges & rarity sets
+// ============================================================
+const GEN_RANGES: [number, number][] = [
+  [1, 151], [152, 251], [252, 386], [387, 493],
+  [494, 649], [650, 721], [722, 809], [810, 905], [906, 1025],
+];
+function genOf(id: number) {
+  for (let i = 0; i < GEN_RANGES.length; i++) {
+    const [a, b] = GEN_RANGES[i];
+    if (id >= a && id <= b) return i + 1;
+  }
+  return 0;
+}
+const LEGENDARY = new Set([144,145,146,150,243,244,245,249,250,377,378,379,380,381,382,383,384,480,481,482,483,484,485,486,487,488,638,639,640,641,642,643,644,645,646,716,717,718,772,773,785,786,787,788,789,790,791,792,800,888,889,890,891,892,894,895,896,897,898,905,1001,1002,1003,1004,1007,1008,1014,1015,1016,1017]);
+const MYTHICAL = new Set([151,251,385,386,489,490,491,492,493,494,647,648,649,719,720,721,801,802,807,808,809,893,1025]);
+const ULTRA_BEAST = new Set([793,794,795,796,797,798,799,803,804,805,806]);
+function rarityOf(id: number): "legendary" | "mythical" | "ultrabeast" | "normal" {
+  if (LEGENDARY.has(id)) return "legendary";
+  if (MYTHICAL.has(id)) return "mythical";
+  if (ULTRA_BEAST.has(id)) return "ultrabeast";
+  return "normal";
 }
 
 // ============================================================
-// Catalog (fetched from PokéAPI)
+// Storage helpers
+// ============================================================
+function lsGet<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) as T : fallback; } catch { return fallback; }
+}
+function lsSet(key: string, value: unknown) {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+
+// ============================================================
+// Coins (with 250 migration)
+// ============================================================
+function readCoins(): number {
+  if (typeof window === "undefined") return STARTING_COINS;
+  const migrated = localStorage.getItem("ppb-coins-v2");
+  const v = localStorage.getItem("ppb-coins");
+  if (!migrated) {
+    localStorage.setItem("ppb-coins-v2", "1");
+    if (v === null || Number(v) < STARTING_COINS) {
+      localStorage.setItem("ppb-coins", String(STARTING_COINS));
+      return STARTING_COINS;
+    }
+  }
+  if (v === null) return STARTING_COINS;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : STARTING_COINS;
+}
+function writeCoins(n: number) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("ppb-coins", String(Math.max(0, Math.round(n))));
+}
+
+// ============================================================
+// Signature moves (curated, falls back to generic)
+// ============================================================
+const SPECIALS: Record<number, { name: string; kind: AttackKind; dmg: number }> = {
+  1:{name:"Vine Whip",kind:"leaf",dmg:14},2:{name:"Razor Leaf",kind:"leaf",dmg:18},3:{name:"Solar Beam",kind:"leaf",dmg:24},
+  4:{name:"Ember",kind:"fireball",dmg:14},5:{name:"Flamethrower",kind:"fireball",dmg:18},6:{name:"Blast Burn",kind:"fireball",dmg:26},
+  7:{name:"Water Gun",kind:"waterjet",dmg:14},8:{name:"Bubble Beam",kind:"waterjet",dmg:18},9:{name:"Hydro Pump",kind:"waterjet",dmg:24},
+  25:{name:"Thunderbolt",kind:"lightning",dmg:20},26:{name:"Thunder",kind:"lightning",dmg:26},
+  65:{name:"Psychic",kind:"psybeam",dmg:24},68:{name:"Dynamic Punch",kind:"punch",dmg:24},
+  76:{name:"Stone Edge",kind:"rock",dmg:24},94:{name:"Shadow Ball",kind:"shadowball",dmg:22},
+  131:{name:"Blizzard",kind:"iceshard",dmg:24},143:{name:"Body Slam",kind:"punch",dmg:22},
+  144:{name:"Blizzard",kind:"iceshard",dmg:30},145:{name:"Thunder",kind:"lightning",dmg:30},146:{name:"Sky Attack",kind:"fireball",dmg:30},
+  149:{name:"Hyper Beam",kind:"dragonpulse",dmg:28},150:{name:"Psystrike",kind:"psybeam",dmg:32},151:{name:"Aura Sphere",kind:"fairywind",dmg:28},
+  157:{name:"Eruption",kind:"fireball",dmg:28},160:{name:"Hydro Cannon",kind:"waterjet",dmg:28},
+  248:{name:"Stone Edge",kind:"rock",dmg:28},249:{name:"Aeroblast",kind:"fairywind",dmg:30},250:{name:"Sacred Fire",kind:"fireball",dmg:30},
+  254:{name:"Frenzy Plant",kind:"leaf",dmg:28},257:{name:"Blaze Kick",kind:"fireball",dmg:26},260:{name:"Hydro Pump",kind:"waterjet",dmg:26},
+  445:{name:"Outrage",kind:"dragonpulse",dmg:28},448:{name:"Aura Sphere",kind:"fairywind",dmg:26},
+  483:{name:"Spacial Rend",kind:"dragonpulse",dmg:32},484:{name:"Roar of Time",kind:"dragonpulse",dmg:32},487:{name:"Shadow Force",kind:"shadowball",dmg:32},
+  493:{name:"Judgment",kind:"fairywind",dmg:32},643:{name:"Blue Flare",kind:"fireball",dmg:32},644:{name:"Bolt Strike",kind:"lightning",dmg:32},
+  646:{name:"Glaciate",kind:"iceshard",dmg:30},716:{name:"Geomancy",kind:"fairywind",dmg:30},718:{name:"Dragon Pulse",kind:"dragonpulse",dmg:30},
+  800:{name:"Photon Geyser",kind:"psybeam",dmg:32},898:{name:"Astral Barrage",kind:"shadowball",dmg:32},
+  1007:{name:"Glaive Rush",kind:"dragonpulse",dmg:32},1008:{name:"Sacred Sword",kind:"punch",dmg:30},
+};
+
+// ============================================================
+// PokéAPI fetchers (with localStorage cache)
 // ============================================================
 type CatalogEntry = { id: number; name: string; display: string };
 let CATALOG_CACHE: CatalogEntry[] | null = null;
 const POKE_CACHE = new Map<number, MonData>();
+const SPECIES_CACHE = new Map<number, { evoChainUrl: string; varieties: { name: string; id: number; isDefault: boolean }[]; isLegendary: boolean; isMythical: boolean }>();
+const EVOCHAIN_CACHE = new Map<string, number[]>(); // url → species id chain
 
 async function loadCatalog(): Promise<CatalogEntry[]> {
   if (CATALOG_CACHE) return CATALOG_CACHE;
+  const cached = lsGet<CatalogEntry[] | null>("ppb-catalog-v1", null);
+  if (cached && cached.length > 1000) { CATALOG_CACHE = cached; return cached; }
   const res = await fetch("https://pokeapi.co/api/v2/pokemon?limit=1400");
   const json = await res.json();
   const list: CatalogEntry[] = (json.results as { name: string; url: string }[])
@@ -153,103 +231,171 @@ async function loadCatalog(): Promise<CatalogEntry[]> {
     })
     .filter((e) => e.id > 0);
   CATALOG_CACHE = list;
+  lsSet("ppb-catalog-v1", list);
   return list;
 }
 
-// Hand-curated signature moves for Gen 1 (1-151)
-const SPECIALS: Record<number, { name: string; kind: AttackKind; dmg: number }> = {
-  1:{name:"Vine Whip",kind:"leaf",dmg:18},2:{name:"Razor Leaf",kind:"leaf",dmg:22},3:{name:"Solar Beam",kind:"leaf",dmg:34},
-  4:{name:"Ember",kind:"fireball",dmg:18},5:{name:"Flamethrower",kind:"fireball",dmg:24},6:{name:"Blast Burn",kind:"fireball",dmg:36},
-  7:{name:"Water Gun",kind:"waterjet",dmg:17},8:{name:"Bubble Beam",kind:"waterjet",dmg:22},9:{name:"Hydro Pump",kind:"waterjet",dmg:34},
-  25:{name:"Thunderbolt",kind:"lightning",dmg:26},26:{name:"Thunder",kind:"lightning",dmg:36},
-  65:{name:"Psychic",kind:"psybeam",dmg:34},68:{name:"Dynamic Punch",kind:"punch",dmg:34},
-  76:{name:"Stone Edge",kind:"rock",dmg:34},94:{name:"Shadow Ball",kind:"shadowball",dmg:32},
-  131:{name:"Blizzard",kind:"iceshard",dmg:34},143:{name:"Body Slam",kind:"punch",dmg:30},
-  144:{name:"Blizzard",kind:"iceshard",dmg:44},145:{name:"Thunder",kind:"lightning",dmg:44},146:{name:"Sky Attack",kind:"fireball",dmg:44},
-  149:{name:"Hyper Beam",kind:"dragonpulse",dmg:38},150:{name:"Psystrike",kind:"psybeam",dmg:48},151:{name:"Aura Sphere",kind:"fairywind",dmg:40},
-  // Notable gen 2+ signatures
-  157:{name:"Eruption",kind:"fireball",dmg:40},160:{name:"Hydro Cannon",kind:"waterjet",dmg:40},
-  248:{name:"Stone Edge",kind:"rock",dmg:38},249:{name:"Aeroblast",kind:"fairywind",dmg:42},250:{name:"Sacred Fire",kind:"fireball",dmg:42},
-  254:{name:"Frenzy Plant",kind:"leaf",dmg:40},257:{name:"Blaze Kick",kind:"fireball",dmg:38},260:{name:"Hydro Pump",kind:"waterjet",dmg:38},
-  445:{name:"Outrage",kind:"dragonpulse",dmg:38},448:{name:"Aura Sphere",kind:"fairywind",dmg:36},
-  483:{name:"Spacial Rend",kind:"dragonpulse",dmg:46},484:{name:"Roar of Time",kind:"dragonpulse",dmg:46},487:{name:"Shadow Force",kind:"shadowball",dmg:46},
-  493:{name:"Judgment",kind:"fairywind",dmg:48},643:{name:"Blue Flare",kind:"fireball",dmg:48},644:{name:"Bolt Strike",kind:"lightning",dmg:48},
-  646:{name:"Glaciate",kind:"iceshard",dmg:44},716:{name:"Geomancy",kind:"fairywind",dmg:46},718:{name:"Dragon Pulse",kind:"dragonpulse",dmg:46},
-  800:{name:"Photon Geyser",kind:"psybeam",dmg:48},898:{name:"Astral Barrage",kind:"shadowball",dmg:46},
-  1007:{name:"Glaive Rush",kind:"dragonpulse",dmg:48},1008:{name:"Sacred Sword",kind:"punch",dmg:46},
-};
-
-function isMegaName(n: string) { return n.startsWith("mega-") || n.endsWith("-mega") || n.endsWith("-mega-x") || n.endsWith("-mega-y"); }
+function isMegaName(n: string) { return /(^mega-)|(-mega(-x|-y)?$)/.test(n); }
 function isGmaxName(n: string) { return n.includes("-gmax"); }
+function isRegionalName(n: string) { return /-(alola|galar|hisui|paldea)/.test(n); }
+
+function bestSprite(j: { sprites?: { other?: Record<string, { front_default?: string }>; versions?: { ["generation-v"]?: { ["black-white"]?: { animated?: { front_default?: string } } } }; front_default?: string }; name: string; id: number; speciesId: number }): string {
+  const s = j.sprites;
+  const animated = s?.versions?.["generation-v"]?.["black-white"]?.animated?.front_default;
+  const official = s?.other?.["official-artwork"]?.front_default;
+  const home = s?.other?.["home"]?.front_default;
+  const dream = s?.other?.["dream_world"]?.front_default;
+  const front = s?.front_default;
+  if (j.speciesId <= 649 && animated) return animated;
+  if (official) return official;
+  if (home) return home;
+  if (front) return front;
+  if (dream) return dream;
+  // Fallback to Showdown CDN by slug (handles many fan-named forms)
+  return `https://play.pokemonshowdown.com/sprites/gen5/${slugify(j.name)}.png`;
+}
 
 async function fetchMon(id: number, uid: string): Promise<MonData | null> {
   let cached = POKE_CACHE.get(id);
+  if (!cached) {
+    const stored = lsGet<MonData | null>(`ppb-mon-${id}`, null);
+    if (stored) { POKE_CACHE.set(id, stored); cached = stored; }
+  }
   if (!cached) {
     try {
       const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
       if (!res.ok) return null;
       const j = await res.json();
-      const types = (j.types as { slot: number; type: { name: string } }[])
-        .sort((a, b) => a.slot - b.slot).map((t) => t.type.name as ElementType);
+      const types = (j.types as { slot: number; type: { name: string } }[]).sort((a, b) => a.slot - b.slot).map((t) => t.type.name as ElementType);
       const primary = types[0] || "normal";
       const stats: Record<string, number> = {};
       (j.stats as { stat: { name: string }; base_stat: number }[]).forEach((s) => { stats[s.stat.name] = s.base_stat; });
       const speciesId = Number((j.species.url as string).match(/\/pokemon-species\/(\d+)\//)?.[1] || id);
-      const animated = j.sprites?.versions?.["generation-v"]?.["black-white"]?.animated?.front_default;
-      const official = j.sprites?.other?.["official-artwork"]?.front_default;
-      const fallback = j.sprites?.front_default;
-      const sprite = (speciesId <= 649 && animated) ? animated : (official || fallback || "");
+      const sprite = bestSprite({ sprites: j.sprites, name: j.name, id, speciesId });
       const cry = speciesId <= 1025 ? `https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon/latest/${speciesId}.ogg` : null;
       const sig = SPECIALS[speciesId];
       const kind = TYPE_KIND[primary];
       const atk = stats["attack"] ?? 60;
-      const totalForSig = (stats["special-attack"] ?? 60) > atk ? (stats["special-attack"] ?? 60) : atk;
-      const sigDmg = sig?.dmg ?? Math.round(14 + totalForSig * 0.18);
+      const totalForSig = Math.max(atk, stats["special-attack"] ?? 60);
+      const sigDmg = sig?.dmg ?? Math.round(10 + totalForSig * 0.12);
       const sigName = sig?.name ?? GENERIC_MOVES[primary][1];
       const sigKind = sig?.kind ?? kind;
-      const basicDmg = Math.round(6 + atk * 0.08);
-      const basicName = GENERIC_MOVES[primary][0];
+      const basicDmg = Math.round(5 + atk * 0.05);
       const name = titleCase(j.name as string);
       cached = {
         uid, id, speciesId, name, type: primary, color: TYPE_COLORS[primary] || "#fff",
         sprite, cry,
         baseHp: stats["hp"] ?? 60, baseAtk: atk, baseDef: stats["defense"] ?? 60, baseSpd: stats["speed"] ?? 60,
         signature: { name: sigName, kind: sigKind, dmg: sigDmg },
-        basic: { name: basicName, kind, dmg: basicDmg },
-        isMega: isMegaName(j.name), isGmax: isGmaxName(j.name),
+        basic: { name: GENERIC_MOVES[primary][0], kind, dmg: basicDmg },
+        isMega: isMegaName(j.name), isGmax: isGmaxName(j.name), isRegional: isRegionalName(j.name),
       };
       POKE_CACHE.set(id, cached);
-    } catch {
-      return null;
-    }
+      lsSet(`ppb-mon-${id}`, cached);
+    } catch { return null; }
   }
   return { ...cached, uid };
 }
 
-// ============================================================
-// Curated evolution lines (Random + Evolve mode)
-// ============================================================
-const EVO_LINES: number[][] = [
-  [1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12], [13, 14, 15], [16, 17, 18],
-  [25, 26], [27, 28], [29, 30, 31], [32, 33, 34], [60, 61, 62], [63, 64, 65],
-  [66, 67, 68], [74, 75, 76], [92, 93, 94], [147, 148, 149], [152, 153, 154],
-  [155, 156, 157], [158, 159, 160], [246, 247, 248], [252, 253, 254], [255, 256, 257],
-  [258, 259, 260], [387, 388, 389], [390, 391, 392], [393, 394, 395], [443, 444, 445],
-  [495, 496, 497], [498, 499, 500], [501, 502, 503], [650, 651, 652], [653, 654, 655],
-  [656, 657, 658], [722, 723, 724], [725, 726, 727], [728, 729, 730],
-  [810, 811, 812], [813, 814, 815], [816, 817, 818], [906, 907, 908], [909, 910, 911], [912, 913, 914],
-];
+async function fetchSpecies(speciesId: number) {
+  let s = SPECIES_CACHE.get(speciesId);
+  if (s) return s;
+  const cached = lsGet<typeof s | null>(`ppb-sp-${speciesId}`, null);
+  if (cached) { SPECIES_CACHE.set(speciesId, cached); return cached; }
+  try {
+    const res = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${speciesId}`);
+    if (!res.ok) return null;
+    const j = await res.json();
+    const varieties = (j.varieties as { is_default: boolean; pokemon: { name: string; url: string } }[]).map((v) => {
+      const id = Number(v.pokemon.url.match(/\/pokemon\/(\d+)\//)?.[1] || 0);
+      return { name: v.pokemon.name, id, isDefault: v.is_default };
+    });
+    s = { evoChainUrl: j.evolution_chain?.url || "", varieties, isLegendary: !!j.is_legendary, isMythical: !!j.is_mythical };
+    SPECIES_CACHE.set(speciesId, s);
+    lsSet(`ppb-sp-${speciesId}`, s);
+    return s;
+  } catch { return null; }
+}
 
-async function buildEvoLine(line: number[], uid: string): Promise<MonData | null> {
+type ChainNode = { species: { name: string; url: string }; evolves_to: ChainNode[] };
+async function fetchEvoChain(url: string): Promise<number[]> {
+  if (!url) return [];
+  const c = EVOCHAIN_CACHE.get(url);
+  if (c) return c;
+  const cached = lsGet<number[] | null>(`ppb-ec-${url}`, null);
+  if (cached) { EVOCHAIN_CACHE.set(url, cached); return cached; }
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const j = await res.json();
+    const ids: number[] = [];
+    const walk = (n: ChainNode) => {
+      const id = Number(n.species.url.match(/\/pokemon-species\/(\d+)\//)?.[1] || 0);
+      if (id) ids.push(id);
+      n.evolves_to.forEach(walk);
+    };
+    walk(j.chain);
+    EVOCHAIN_CACHE.set(url, ids);
+    lsSet(`ppb-ec-${url}`, ids);
+    return ids;
+  } catch { return []; }
+}
+
+// Build an evolution-linked MonData starting from a given species (or pokemon) id.
+// Walks: speciesId → its evolution chain (linear forward) → at final stage, swap to a
+// random alt form (mega/gmax/regional/etc) if any exist.
+async function buildLinkedFromSpecies(startSpeciesId: number, uid: string): Promise<MonData | null> {
+  const sp = await fetchSpecies(startSpeciesId);
+  if (!sp) return fetchMon(startSpeciesId, uid);
+  const chain = await fetchEvoChain(sp.evoChainUrl);
+  // Find the index of this species in the chain and walk forward.
+  const idx = chain.indexOf(startSpeciesId);
+  const forward = idx >= 0 ? chain.slice(idx) : chain;
+  if (forward.length === 0) return fetchMon(startSpeciesId, uid);
+
   const stages: MonData[] = [];
-  for (const id of line) {
-    const m = await fetchMon(id, `${uid}-${id}`);
-    if (!m) return null;
-    stages.push(m);
+  for (const sid of forward) {
+    const m = await fetchMon(sid, `${uid}-${sid}`);
+    if (m) stages.push(m);
   }
-  // Link forward
+  if (stages.length === 0) return null;
+
+  // Alt-form: at the final stage species, pick a non-default variety at random.
+  const finalSp = await fetchSpecies(forward[forward.length - 1]);
+  const alts = finalSp?.varieties.filter((v) => !v.isDefault && (isMegaName(v.name) || isGmaxName(v.name) || isRegionalName(v.name) || v.name.includes("-totem") || v.name.includes("-alpha"))) ?? [];
+  if (alts.length > 0) {
+    const pick = alts[Math.floor(Math.random() * alts.length)];
+    const altMon = await fetchMon(pick.id, `${uid}-alt-${pick.id}`);
+    if (altMon) stages.push(altMon);
+  }
+
   for (let i = stages.length - 2; i >= 0; i--) stages[i].evolveTo = stages[i + 1];
-  return stages[0];
+  return { ...stages[0], uid };
+}
+
+// For custom-mode "evolve this one": given a chosen pokemon id, build its forward chain
+// + alt form (so a final-stage pick still has somewhere to evolve to).
+async function buildEvolutionForPick(pokemonId: number, uid: string): Promise<MonData | null> {
+  // First, find the species
+  const m = await fetchMon(pokemonId, uid);
+  if (!m) return null;
+  const linked = await buildLinkedFromSpecies(m.speciesId, uid);
+  if (!linked) return m;
+  // If the player picked a later stage of the chain, splice from that point.
+  // We re-resolve by walking the linked list until we find a stage matching pokemonId,
+  // or just use the linked head if pokemonId === speciesId.
+  let head: MonData | undefined = linked;
+  while (head && head.id !== pokemonId) head = head.evolveTo;
+  if (head) return { ...head, uid };
+  // Otherwise: start from the picked mon and attach the alt form (if any) directly.
+  const sp = await fetchSpecies(m.speciesId);
+  const alts = sp?.varieties.filter((v) => !v.isDefault && (isMegaName(v.name) || isGmaxName(v.name) || isRegionalName(v.name))) ?? [];
+  if (alts.length > 0) {
+    const pick = alts[Math.floor(Math.random() * alts.length)];
+    const altMon = await fetchMon(pick.id, `${uid}-alt-${pick.id}`);
+    if (altMon) return { ...m, evolveTo: altMon };
+  }
+  return m;
 }
 
 // ============================================================
@@ -268,18 +414,43 @@ function playSound(url: string | null, volume: number) {
 }
 
 // ============================================================
-// Coins
+// Shop
 // ============================================================
-function readCoins(): number {
-  if (typeof window === "undefined") return 100;
-  const v = localStorage.getItem("ppb-coins");
-  if (v === null) return 100;
-  const n = Number(v); return Number.isFinite(n) ? n : 100;
-}
-function writeCoins(n: number) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem("ppb-coins", String(Math.max(0, Math.round(n))));
-}
+type ShopState = {
+  ownedBgs: string[];
+  selectedBg: string;
+  ownedFx: string[];
+  selectedFx: string;
+  customBg: string | null; // dataURL
+  abilityPickWinner: number; // owned uses
+  abilityManualEvolve: number;
+};
+const DEFAULT_SHOP: ShopState = {
+  ownedBgs: ["grass"],
+  selectedBg: "grass",
+  ownedFx: ["confetti"],
+  selectedFx: "confetti",
+  customBg: null,
+  abilityPickWinner: 0,
+  abilityManualEvolve: 0,
+};
+const BACKGROUNDS: { id: string; label: string; price: number; cls: string }[] = [
+  { id: "grass", label: "Grass Field", price: 0, cls: "arena-grass" },
+  { id: "sand", label: "Desert", price: 60, cls: "arena-sand" },
+  { id: "snow", label: "Snowfield", price: 80, cls: "arena-snow" },
+  { id: "volcano", label: "Volcano", price: 120, cls: "arena-volcano" },
+  { id: "void", label: "Cosmic Void", price: 200, cls: "arena-void" },
+];
+const WIN_FX: { id: string; label: string; price: number }[] = [
+  { id: "confetti", label: "Confetti", price: 0 },
+  { id: "fireworks", label: "Fireworks", price: 80 },
+  { id: "pixelrain", label: "Pixel Rain", price: 60 },
+];
+const ABILITY_PICK_PRICE = 75;
+const ABILITY_EVOLVE_PRICE = 40;
+
+function readShop(): ShopState { return { ...DEFAULT_SHOP, ...lsGet<Partial<ShopState>>("ppb-shop-v1", {}) }; }
+function writeShop(s: ShopState) { lsSet("ppb-shop-v1", s); }
 
 // ============================================================
 // Component
@@ -289,16 +460,20 @@ function Game() {
   const [mode, setMode] = useState<Mode>("ffa");
   const [battleSize, setBattleSize] = useState(5);
   const [rosterMode, setRosterMode] = useState<"random" | "custom">("random");
-  const [picked, setPicked] = useState<MonData[]>([]); // for custom mode
+  const [picks, setPicks] = useState<Pick[]>([]);
+  const [randomRoster, setRandomRoster] = useState<MonData[]>([]);
   const [betAmount, setBetAmount] = useState(10);
-  const [betTarget, setBetTarget] = useState<string | null>(null); // uid (FFA) or "team-0"/"team-1"
-  const [coins, setCoins] = useState<number>(100);
+  const [betTarget, setBetTarget] = useState<string | null>(null);
+  const [coins, setCoins] = useState<number>(STARTING_COINS);
   const [soundOn, setSoundOn] = useState(true);
   const [volume] = useState(0.4);
   const [loading, setLoading] = useState(false);
+  const [evolveSec, setEvolveSec] = useState(15);
+  const [shop, setShop] = useState<ShopState>(DEFAULT_SHOP);
 
-  useEffect(() => { setCoins(readCoins()); }, []);
+  useEffect(() => { setCoins(readCoins()); setShop(readShop()); }, []);
   useEffect(() => { writeCoins(coins); }, [coins]);
+  useEffect(() => { writeShop(shop); }, [shop]);
 
   // Battle state
   const monsRef = useRef<MonState[]>([]);
@@ -306,6 +481,7 @@ function Game() {
   const popsRef = useRef<Pop[]>([]);
   const idRef = useRef(1);
   const [, force] = useState(0);
+  const lastRenderRef = useRef(0);
   const [running, setRunning] = useState(true);
   const runningRef = useRef(true);
   const [log, setLog] = useState<LogEntry[]>([]);
@@ -316,6 +492,8 @@ function Game() {
   const soundRef = useRef(soundOn);
   const battleBet = useRef<{ amount: number; target: string | null } | null>(null);
   const [payout, setPayout] = useState<number>(0);
+  const evolveMsRef = useRef(15000);
+  const pickWinnerAbilityRef = useRef(false); // armed for this battle?
 
   useEffect(() => { runningRef.current = running; }, [running]);
   useEffect(() => { modeRef.current = mode; }, [mode]);
@@ -325,7 +503,7 @@ function Game() {
     setLog((l) => [{ id: idRef.current++, text, color }, ...l].slice(0, 14));
   };
 
-  // ============ Combat loop ============
+  // ============ Combat loop (throttled render ~30fps) ============
   useEffect(() => {
     if (screen !== "battle") return;
     let raf = 0;
@@ -335,7 +513,10 @@ function Game() {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       if (runningRef.current && status === "fighting") step(dt, now);
-      force((n) => (n + 1) % 1_000_000);
+      if (now - lastRenderRef.current > 33) {
+        lastRenderRef.current = now;
+        force((n) => (n + 1) % 1_000_000);
+      }
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
@@ -380,8 +561,7 @@ function Game() {
       if (teamsLeft <= 1) {
         const wTeam = aliveByTeam.findIndex((c) => c > 0);
         setWinnerTeam(wTeam === -1 ? null : wTeam);
-        setWinnerIdx(null);
-        setStatus("ended");
+        setWinnerIdx(null); setStatus("ended");
         if (wTeam >= 0) {
           pushLog(`${TEAM_NAMES[wTeam]} WINS!`, TEAM_COLORS[wTeam]);
           settleBet(`team-${wTeam}`);
@@ -392,14 +572,29 @@ function Game() {
     const alive = mons.map((m, i) => (m.hp > 0 ? i : -1)).filter((i) => i >= 0);
     if (alive.length <= 1) {
       const w = alive[0] ?? null;
-      setWinnerIdx(w);
-      setWinnerTeam(null);
-      setStatus("ended");
+      setWinnerIdx(w); setWinnerTeam(null); setStatus("ended");
       if (w !== null) {
         pushLog(`${mons[w].data.name} WINS!`, mons[w].data.color);
         settleBet(mons[w].data.uid);
       } else { pushLog("Draw!", "var(--color-muted-foreground)"); settleBet(null); }
     }
+  };
+
+  // Pick-Winner ability: bias outcome before final hit
+  const tryApplyPickWinner = (now: number) => {
+    if (!pickWinnerAbilityRef.current || !battleBet.current?.target) return;
+    const target = battleBet.current.target;
+    const mons = monsRef.current;
+    if (Math.random() > 0.5) return;
+    if (target.startsWith("team-")) {
+      const t = Number(target.slice(5));
+      mons.forEach((m) => { if (m.team !== t) m.hp = Math.max(1, m.hp - 9999); });
+    } else {
+      mons.forEach((m) => { if (m.data.uid !== target) m.hp = Math.max(0, m.hp - 9999); });
+    }
+    pickWinnerAbilityRef.current = false;
+    pushLog("✨ Pick-Winner ability succeeded!", "#ffd83a");
+    void now;
   };
 
   const step = (dt: number, now: number) => {
@@ -408,19 +603,18 @@ function Game() {
       if (m.hp <= 0) return;
       const d = m.data;
 
-      // Evolution (only in random mode where evolveTo is set)
+      // Evolution
       m.evolveTimer += dt * 1000;
-      if (d.evolveTo && m.evolveTimer >= EVOLVE_INTERVAL) {
+      if (m.evolveEnabled && d.evolveTo && m.evolveTimer >= evolveMsRef.current) {
         const next = d.evolveTo;
         const oldName = d.name;
         m.data = { ...next, uid: d.uid };
         m.evolveTimer = 0;
         m.evolveFlashUntil = now + EVOLVE_FLASH_MS;
-        // scale HP up a bit on evolve
-        const newMax = Math.round(60 + next.baseHp * 1.0);
+        const newMax = Math.round(120 + next.baseHp * 1.8);
         const ratio = m.hp / m.maxHp;
         m.maxHp = newMax;
-        m.hp = Math.min(newMax, Math.max(20, Math.round(newMax * ratio + 30)));
+        m.hp = Math.min(newMax, Math.max(40, Math.round(newMax * ratio + 50)));
         pushLog(`${oldName} evolved into ${next.name}!`, next.color);
         if (soundRef.current) playSound(next.cry, volume);
       }
@@ -436,54 +630,54 @@ function Game() {
       const moveSpeed = 60 + d.baseSpd * 0.35;
       m.vel.x = (dx / dist) * seek + tangent.x * moveSpeed * 0.6 + rand(-10, 10);
       m.vel.y = (dy / dist) * seek + tangent.y * moveSpeed * 0.6 + rand(-10, 10);
-
-      // Avoidance
       mons.forEach((o, j) => {
         if (i === j || o.hp <= 0) return;
         const ox = m.pos.x - o.pos.x, oy = m.pos.y - o.pos.y;
         const od = Math.hypot(ox, oy) || 1;
         if (od < MON_R * 2.4) { m.vel.x += (ox / od) * 80; m.vel.y += (oy / od) * 80; }
       });
-
       m.pos.x = Math.max(MON_R, Math.min(ARENA_W - MON_R, m.pos.x + m.vel.x * dt));
       m.pos.y = Math.max(MON_R, Math.min(ARENA_H - MON_R, m.pos.y + m.vel.y * dt));
 
-      // Basic attack — cooldown scaled by speed (faster = shorter)
-      const atkCd = Math.max(500, ABILITY_COOLDOWN_BASE * (80 / Math.max(20, d.baseSpd)));
+      const atkCd = Math.max(700, ABILITY_COOLDOWN_BASE * (80 / Math.max(20, d.baseSpd)));
       if (now - m.lastAttack >= atkCd && dist <= ATTACK_RANGE + 60) {
         m.lastAttack = now;
         m.attackFlash = now + 300;
-        const crit = Math.random() < 0.18;
+        const crit = Math.random() < 0.15;
         const eff = typeMult(d.type, t.data.type);
-        const atkMul = 0.8 + d.baseAtk / 130;
-        const defReduction = 1 - Math.min(0.6, t.data.baseDef / 320);
-        const dmg = Math.max(1, Math.round(d.basic.dmg * atkMul * (crit ? 1.6 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
+        // Flattened stat influence (less determinism, more randomness)
+        const atkMul = 0.7 + 0.6 * (d.baseAtk / 100);
+        const defReduction = 1 - Math.min(0.55, t.data.baseDef / 360);
+        const dmg = Math.max(1, Math.round(d.basic.dmg * atkMul * (crit ? 1.5 : 1) * eff * defReduction * (0.75 + Math.random() * 0.5)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
-        projectilesRef.current.push({
-          id: idRef.current++, fromIdx: i, targetIdx: tgt,
-          from: { ...m.pos }, pos: { ...m.pos }, angle: ang,
-          color: d.color, dmg, crit, kind: d.basic.kind, bornAt: now,
-          duration: d.basic.kind === "lightning" ? 200 : 420,
-        });
+        if (projectilesRef.current.length < 60) {
+          projectilesRef.current.push({
+            id: idRef.current++, fromIdx: i, targetIdx: tgt,
+            from: { ...m.pos }, pos: { ...m.pos }, angle: ang,
+            color: d.color, dmg, crit, kind: d.basic.kind, bornAt: now,
+            duration: d.basic.kind === "lightning" ? 200 : 420,
+          });
+        }
         pushLog(`${d.name} → ${t.data.name}: ${d.basic.name} ${crit ? "CRIT " : ""}${dmg}${effLabel(eff)}`, d.color);
       }
 
-      // Signature
       if (now - m.lastSpecial >= SPECIAL_COOLDOWN_BASE && dist <= ATTACK_RANGE + 120) {
         m.lastSpecial = now;
         m.attackFlash = now + 400;
-        const crit = Math.random() < 0.28;
-        const eff = typeMult(d.signature.kind === d.basic.kind ? d.type : d.type, t.data.type);
-        const atkMul = 0.9 + Math.max(d.baseAtk, d.baseAtk) / 110;
-        const defReduction = 1 - Math.min(0.55, t.data.baseDef / 340);
-        const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * (crit ? 1.8 : 1) * eff * defReduction * (0.9 + Math.random() * 0.2)));
+        const crit = Math.random() < 0.22;
+        const eff = typeMult(d.type, t.data.type);
+        const atkMul = 0.8 + 0.6 * (d.baseAtk / 100);
+        const defReduction = 1 - Math.min(0.5, t.data.baseDef / 380);
+        const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * (crit ? 1.7 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
-        projectilesRef.current.push({
-          id: idRef.current++, fromIdx: i, targetIdx: tgt,
-          from: { ...m.pos }, pos: { ...m.pos }, angle: ang,
-          color: d.color, dmg, crit, kind: d.signature.kind, bornAt: now,
-          duration: d.signature.kind === "lightning" ? 240 : 500,
-        });
+        if (projectilesRef.current.length < 60) {
+          projectilesRef.current.push({
+            id: idRef.current++, fromIdx: i, targetIdx: tgt,
+            from: { ...m.pos }, pos: { ...m.pos }, angle: ang,
+            color: d.color, dmg, crit, kind: d.signature.kind, bornAt: now,
+            duration: d.signature.kind === "lightning" ? 240 : 500,
+          });
+        }
         pushLog(`★ ${d.name} unleashed ${d.signature.name}! ${crit ? "CRIT " : ""}${dmg}${effLabel(eff)}`, d.color);
         if (soundRef.current) playSound(d.cry, volume * 0.6);
       }
@@ -518,63 +712,102 @@ function Game() {
     }
     projectilesRef.current = remaining;
     popsRef.current = popsRef.current.filter((p) => now - p.bornAt < 900);
-    if (killed) checkEnd();
+    if (killed) { tryApplyPickWinner(now); checkEnd(); }
   };
+
+  // ============ Random roster preview (so you can bet on random battles) ============
+  const rollRandomRoster = useCallback(async () => {
+    setLoading(true);
+    try {
+      // Uniform sample across all 1025 species
+      const seen = new Set<number>();
+      const picksIds: number[] = [];
+      while (picksIds.length < battleSize) {
+        const id = 1 + Math.floor(Math.random() * 1025);
+        if (!seen.has(id)) { seen.add(id); picksIds.push(id); }
+      }
+      const built = await Promise.all(picksIds.map((id, i) => buildLinkedFromSpecies(id, `r${i}`)));
+      setRandomRoster(built.filter((b): b is MonData => !!b));
+    } finally { setLoading(false); }
+  }, [battleSize]);
+
+  useEffect(() => {
+    if (screen === "lobby" && rosterMode === "random") void rollRandomRoster();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, rosterMode, battleSize]);
 
   // ============ Start battle ============
   const startBattle = async () => {
     setLoading(true);
     try {
-      let roster: MonData[] = [];
+      let roster: { mon: MonData; team: number; evolve: boolean }[] = [];
       if (rosterMode === "random") {
-        const lines = [...EVO_LINES];
-        for (let i = lines.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [lines[i], lines[j]] = [lines[j], lines[i]];
-        }
-        const chosen = lines.slice(0, battleSize);
-        const built = await Promise.all(chosen.map((ln, idx) => buildEvoLine(ln, `r${idx}`)));
-        roster = built.filter((b): b is MonData => !!b);
+        const built = randomRoster.length === battleSize ? randomRoster : await Promise.all(
+          Array.from({ length: battleSize }, (_, i) => buildLinkedFromSpecies(1 + Math.floor(Math.random() * 1025), `r${i}`))
+        ).then((arr) => arr.filter((b): b is MonData => !!b));
+        roster = built.map((mon, i) => ({
+          mon: { ...mon, uid: `r${i}-${mon.id}` },
+          team: mode === "teams" ? (i < built.length / 2 ? 0 : 1) : i,
+          evolve: true,
+        }));
       } else {
-        roster = picked.slice(0, battleSize).map((m, i) => ({ ...m, uid: `c${i}-${m.id}` }));
+        // Custom mode: each pick has a team and an evolve flag.
+        // If evolve is on but mon has no evolveTo, attach chain now.
+        const prepared = await Promise.all(picks.slice(0, battleSize).map(async (p, i) => {
+          let mon = p.mon;
+          if (p.evolve && !mon.evolveTo) {
+            const linked = await buildEvolutionForPick(mon.id, `c${i}`);
+            if (linked) mon = linked;
+          }
+          return { mon: { ...mon, uid: `c${i}-${mon.id}` }, team: p.team, evolve: p.evolve };
+        }));
+        roster = prepared;
+        // Validate teams when in team mode
+        if (mode === "teams") {
+          const t0 = roster.filter((r) => r.team === 0).length;
+          const t1 = roster.filter((r) => r.team === 1).length;
+          if (t0 === 0 || t1 === 0) {
+            alert("Team battle needs at least 1 Pokémon on each team.");
+            setLoading(false); return;
+          }
+        }
       }
 
       if (roster.length < 2) {
         alert("Need at least 2 Pokémon to start a battle.");
-        setLoading(false);
-        return;
+        setLoading(false); return;
       }
 
-      // Build mon states
-      const mons: MonState[] = roster.map((d, i) => {
-        let pos: Vec, team: number;
+      const mons: MonState[] = roster.map((entry, i) => {
+        const d = entry.mon;
+        let pos: Vec;
         if (mode === "teams") {
-          team = i < roster.length / 2 ? 0 : 1;
-          const teamIdx = team === 0 ? i : i - Math.ceil(roster.length / 2);
-          const teamCount = team === 0 ? Math.ceil(roster.length / 2) : Math.floor(roster.length / 2);
-          const x = team === 0 ? 120 : ARENA_W - 120;
+          const sameTeam = roster.filter((r) => r.team === entry.team);
+          const teamIdx = sameTeam.indexOf(entry);
+          const teamCount = sameTeam.length;
+          const x = entry.team === 0 ? 120 : ARENA_W - 120;
           const y = 80 + ((ARENA_H - 160) * (teamIdx + 0.5)) / teamCount;
           pos = { x, y };
         } else {
-          team = i;
           const a = (i / roster.length) * Math.PI * 2 + Math.random() * 0.4;
           pos = { x: ARENA_W / 2 + Math.cos(a) * 200, y: ARENA_H / 2 + Math.sin(a) * 180 };
         }
-        const maxHp = Math.round(60 + d.baseHp * 1.0);
+        const maxHp = Math.round(120 + d.baseHp * 1.8);
         return {
           pos, vel: { x: rand(-30, 30), y: rand(-30, 30) },
-          hp: maxHp, maxHp, team, data: d,
+          hp: maxHp, maxHp, team: entry.team, data: d,
           lastAttack: -rand(0, 1500),
           lastSpecial: -rand(0, SPECIAL_COOLDOWN_BASE),
           evolveTimer: 0, hitFlash: 0, attackFlash: 0, evolveFlashUntil: 0,
+          evolveEnabled: entry.evolve && !!d.evolveTo,
         };
       });
 
       monsRef.current = mons;
       projectilesRef.current = [];
       popsRef.current = [];
+      evolveMsRef.current = evolveSec * 1000;
 
-      // Validate bet target
       let resolvedTarget: string | null = null;
       if (betAmount > 0 && betAmount <= coins && betTarget) {
         if (mode === "teams" && (betTarget === "team-0" || betTarget === "team-1")) resolvedTarget = betTarget;
@@ -583,22 +816,21 @@ function Game() {
       battleBet.current = resolvedTarget ? { amount: betAmount, target: resolvedTarget } : null;
       setPayout(0);
 
-      setLog([{ id: idRef.current++, text: mode === "teams" ? "Team Battle! Wipe the other team." : `${roster.length}-way Free-for-All. Last one standing wins!`, color: "var(--color-muted-foreground)" }]);
+      // Arm Pick-Winner ability if owned and bet placed
+      pickWinnerAbilityRef.current = shop.abilityPickWinner > 0 && !!resolvedTarget;
+      if (pickWinnerAbilityRef.current) {
+        setShop((s) => ({ ...s, abilityPickWinner: Math.max(0, s.abilityPickWinner - 1) }));
+        pushLog("⚡ Pick-Winner ability armed (50% chance).", "#ffd83a");
+      }
+
+      setLog([{ id: idRef.current++, text: mode === "teams" ? "Team Battle! Wipe the other team." : `${roster.length}-way Free-for-All.`, color: "var(--color-muted-foreground)" }]);
       if (battleBet.current) pushLog(`You bet ${battleBet.current.amount} coins on ${resolveBetLabel(resolvedTarget!, mons)}.`, "#ffd83a");
 
-      setStatus("fighting");
-      setWinnerIdx(null);
-      setWinnerTeam(null);
-      setRunning(true);
-      setScreen("battle");
+      setStatus("fighting"); setWinnerIdx(null); setWinnerTeam(null);
+      setRunning(true); setScreen("battle");
 
-      // Intro cries
-      if (soundOn) {
-        mons.slice(0, 3).forEach((m, i) => setTimeout(() => playSound(m.data.cry, volume * 0.5), i * 250));
-      }
-    } finally {
-      setLoading(false);
-    }
+      if (soundOn) mons.slice(0, 3).forEach((m, i) => setTimeout(() => playSound(m.data.cry, volume * 0.5), i * 250));
+    } finally { setLoading(false); }
   };
 
   const resolveBetLabel = (target: string, mons: MonState[]) => {
@@ -607,18 +839,36 @@ function Game() {
     return m ? m.data.name : target;
   };
 
+  const manualEvolveOne = () => {
+    if (shop.abilityManualEvolve <= 0) { pushLog("No Manual-Evolve charges.", "#ff7777"); return; }
+    const mons = monsRef.current;
+    const candidate = mons.find((m) => m.hp > 0 && m.data.evolveTo);
+    if (!candidate) { pushLog("No mon can evolve right now.", "var(--color-muted-foreground)"); return; }
+    candidate.evolveEnabled = true;
+    candidate.evolveTimer = evolveMsRef.current; // force immediate
+    setShop((s) => ({ ...s, abilityManualEvolve: Math.max(0, s.abilityManualEvolve - 1) }));
+    pushLog(`Manual evolve triggered on ${candidate.data.name}.`, "#ffd83a");
+  };
+
+  if (screen === "shop") {
+    return <Shop coins={coins} setCoins={setCoins} shop={shop} setShop={setShop} onClose={() => setScreen("lobby")} />;
+  }
+
   if (screen === "lobby") {
     return (
       <Lobby
         mode={mode} setMode={setMode}
         battleSize={battleSize} setBattleSize={setBattleSize}
         rosterMode={rosterMode} setRosterMode={setRosterMode}
-        picked={picked} setPicked={setPicked}
+        picks={picks} setPicks={setPicks}
+        randomRoster={randomRoster} reroll={rollRandomRoster}
         betAmount={betAmount} setBetAmount={setBetAmount}
         betTarget={betTarget} setBetTarget={setBetTarget}
-        coins={coins} setCoins={setCoins}
-        soundOn={soundOn} setSoundOn={setSoundOn}
+        coins={coins} soundOn={soundOn} setSoundOn={setSoundOn}
+        evolveSec={evolveSec} setEvolveSec={setEvolveSec}
+        shop={shop}
         onStart={startBattle} loading={loading}
+        openShop={() => setScreen("shop")}
       />
     );
   }
@@ -629,6 +879,8 @@ function Game() {
       mode={mode} log={log} status={status} winnerIdx={winnerIdx} winnerTeam={winnerTeam}
       running={running} setRunning={setRunning}
       payout={payout} coins={coins}
+      shop={shop}
+      onManualEvolve={manualEvolveOne}
       backToLobby={() => { setScreen("lobby"); setStatus("fighting"); setBetTarget(null); }}
     />
   );
@@ -641,61 +893,89 @@ function Lobby(props: {
   mode: Mode; setMode: (m: Mode) => void;
   battleSize: number; setBattleSize: (n: number) => void;
   rosterMode: "random" | "custom"; setRosterMode: (m: "random" | "custom") => void;
-  picked: MonData[]; setPicked: (p: MonData[]) => void;
+  picks: Pick[]; setPicks: (p: Pick[]) => void;
+  randomRoster: MonData[]; reroll: () => void;
   betAmount: number; setBetAmount: (n: number) => void;
   betTarget: string | null; setBetTarget: (t: string | null) => void;
-  coins: number; setCoins: (n: number) => void;
-  soundOn: boolean; setSoundOn: (s: boolean) => void;
+  coins: number; soundOn: boolean; setSoundOn: (s: boolean) => void;
+  evolveSec: number; setEvolveSec: (n: number) => void;
+  shop: ShopState;
   onStart: () => void; loading: boolean;
+  openShop: () => void;
 }) {
   const { mode, setMode, battleSize, setBattleSize, rosterMode, setRosterMode,
-    picked, setPicked, betAmount, setBetAmount, betTarget, setBetTarget,
-    coins, soundOn, setSoundOn, onStart, loading } = props;
+    picks, setPicks, randomRoster, reroll,
+    betAmount, setBetAmount, betTarget, setBetTarget,
+    coins, soundOn, setSoundOn, evolveSec, setEvolveSec, shop, onStart, loading, openShop } = props;
 
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [search, setSearch] = useState("");
-  const [showOnly, setShowOnly] = useState<"all" | "mega" | "gmax" | "regional">("all");
+  const [filterType, setFilterType] = useState<"all" | ElementType>("all");
+  const [filterGen, setFilterGen] = useState<"all" | number>("all");
+  const [filterRarity, setFilterRarity] = useState<"all" | "legendary" | "mythical" | "ultrabeast" | "normal">("all");
+  const [filterForm, setFilterForm] = useState<"all" | "mega" | "gmax" | "regional">("all");
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [typeIndex, setTypeIndex] = useState<Map<number, ElementType>>(new Map());
 
+  useEffect(() => { loadCatalog().then(setCatalog).catch(() => {}); }, []);
+
+  // For type/rarity filtering we need to know each entry's type. Use cached mon data only;
+  // no extra fetches. Build incrementally from POKE_CACHE.
   useEffect(() => {
-    loadCatalog().then(setCatalog).catch(() => {});
-  }, []);
+    const m = new Map<number, ElementType>();
+    POKE_CACHE.forEach((md, id) => m.set(id, md.type));
+    setTypeIndex(m);
+  }, [catalog]);
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
     return catalog.filter((c) => {
-      if (showOnly === "mega" && !isMegaName(c.name)) return false;
-      if (showOnly === "gmax" && !isGmaxName(c.name)) return false;
-      if (showOnly === "regional" && !/-(alola|galar|hisui|paldea)/.test(c.name)) return false;
+      if (filterForm === "mega" && !isMegaName(c.name)) return false;
+      if (filterForm === "gmax" && !isGmaxName(c.name)) return false;
+      if (filterForm === "regional" && !isRegionalName(c.name)) return false;
+      if (filterGen !== "all" && c.id <= 1025 && genOf(c.id) !== filterGen) return false;
+      if (filterRarity !== "all" && c.id <= 1025 && rarityOf(c.id) !== filterRarity) return false;
+      if (filterType !== "all") {
+        const t = typeIndex.get(c.id);
+        if (!t || t !== filterType) return false;
+      }
       if (!s) return true;
       return c.name.includes(s) || c.display.toLowerCase().includes(s);
-    }).slice(0, 200);
-  }, [catalog, search, showOnly]);
+    }).slice(0, 240);
+  }, [catalog, search, filterType, filterGen, filterRarity, filterForm, typeIndex]);
 
   const addPick = async (entry: CatalogEntry) => {
-    if (picked.length >= battleSize) return;
+    if (picks.length >= 14) return;
     setBusyId(entry.id);
     const m = await fetchMon(entry.id, `pick-${entry.id}-${Date.now()}`);
     setBusyId(null);
-    if (m) setPicked([...picked, m]);
+    if (m) {
+      // ensure type index updated
+      setTypeIndex((idx) => { const n = new Map(idx); n.set(entry.id, m.type); return n; });
+      setPicks([...picks, { mon: m, team: picks.length % 2, evolve: true }]);
+    }
   };
-  const removePick = (uid: string) => setPicked(picked.filter((p) => p.uid !== uid));
+  const removePick = (uid: string) => setPicks(picks.filter((p) => p.mon.uid !== uid));
+  const updatePick = (uid: string, patch: Partial<Pick>) =>
+    setPicks(picks.map((p) => (p.mon.uid === uid ? { ...p, ...patch } : p)));
 
   const canBet = betAmount > 0 && betAmount <= coins && betTarget !== null;
-  const canStart = rosterMode === "random" ? battleSize >= 2 : picked.length >= 2;
+  const canStart = rosterMode === "random" ? randomRoster.length >= 2 : picks.length >= 2;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-3 p-3 sm:p-5">
+    <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-3 p-3 sm:p-5"
+      style={shop.customBg ? { backgroundImage: `url(${shop.customBg})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-[10px] tracking-wider text-primary sm:text-sm">PIXEL POCKET BRAWL</h1>
-          <p className="mt-1 text-[7px] text-muted-foreground sm:text-[9px]">All 1025 Pokémon · Mega · Gigantamax · Stats matter · Bet to earn coins</p>
+          <p className="mt-1 text-[7px] text-muted-foreground sm:text-[9px]">All 1025 Pokémon · Mega · Gigantamax · Custom teams · Shop</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="rounded border-2 border-border bg-panel px-3 py-2 text-[9px] sm:text-[11px]">
             <span className="text-muted-foreground">COINS </span>
             <span className="text-primary">{coins}</span>
           </div>
+          <button onClick={openShop} className="rounded border-2 border-border bg-primary px-3 py-2 text-[8px] text-primary-foreground sm:text-[10px]">🛒 Shop</button>
           <button onClick={() => setSoundOn(!soundOn)} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">
             {soundOn ? "🔊 Sound" : "🔇 Muted"}
           </button>
@@ -716,12 +996,16 @@ function Lobby(props: {
             </div>
             <div>
               <p className="mb-1 text-muted-foreground">Pokémon per battle: <span className="text-primary">{battleSize}</span></p>
-              <input type="range" min={2} max={8} value={battleSize} onChange={(e) => setBattleSize(Number(e.target.value))} className="w-full" />
+              <input type="range" min={2} max={14} value={battleSize} onChange={(e) => setBattleSize(Number(e.target.value))} className="w-full" />
+            </div>
+            <div>
+              <p className="mb-1 text-muted-foreground">Evolution timer: <span className="text-primary">{evolveSec}s</span></p>
+              <input type="range" min={6} max={25} value={evolveSec} onChange={(e) => setEvolveSec(Number(e.target.value))} className="w-full" />
             </div>
             <div>
               <p className="mb-1 text-muted-foreground">Roster</p>
               <div className="flex gap-2">
-                <button onClick={() => setRosterMode("random")} className={`flex-1 rounded border-2 border-border px-2 py-2 ${rosterMode === "random" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>Random + Evolve</button>
+                <button onClick={() => setRosterMode("random")} className={`flex-1 rounded border-2 border-border px-2 py-2 ${rosterMode === "random" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>Random</button>
                 <button onClick={() => setRosterMode("custom")} className={`flex-1 rounded border-2 border-border px-2 py-2 ${rosterMode === "custom" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>Pick Your Own</button>
               </div>
             </div>
@@ -750,20 +1034,22 @@ function Lobby(props: {
                     </button>
                   ))}
                 </div>
-              ) : rosterMode === "custom" ? (
-                picked.length === 0 ? <p className="text-muted-foreground">Pick fighters below to bet on one.</p> : (
-                  <div className="flex flex-wrap gap-1">
-                    {picked.map((m) => (
-                      <button key={m.uid} onClick={() => setBetTarget(m.uid)}
-                        className="rounded border-2 px-2 py-1"
-                        style={{ borderColor: betTarget === m.uid ? m.color : "var(--color-border)", background: betTarget === m.uid ? m.color : "var(--color-muted)", color: betTarget === m.uid ? "#000" : "inherit" }}>
-                        {m.name}
-                      </button>
-                    ))}
-                  </div>
-                )
               ) : (
-                <p className="text-muted-foreground">In Random + FFA you can't pre-bet on a specific mon. Switch to Pick Your Own or Teams mode.</p>
+                (() => {
+                  const list = rosterMode === "custom" ? picks.map((p) => p.mon) : randomRoster;
+                  if (list.length === 0) return <p className="text-muted-foreground">Pick or roll a roster to bet on one.</p>;
+                  return (
+                    <div className="flex flex-wrap gap-1">
+                      {list.map((m) => (
+                        <button key={m.uid} onClick={() => setBetTarget(m.uid)}
+                          className="rounded border-2 px-2 py-1"
+                          style={{ borderColor: betTarget === m.uid ? m.color : "var(--color-border)", background: betTarget === m.uid ? m.color : "var(--color-muted)", color: betTarget === m.uid ? "#000" : "inherit" }}>
+                          {m.name}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()
               )}
             </div>
             <p className="text-[7px] text-muted-foreground sm:text-[9px]">Win: bet × {mode === "teams" ? 2 : Math.max(2, battleSize)}. Lose: lose your bet.</p>
@@ -771,32 +1057,85 @@ function Lobby(props: {
         </div>
       </section>
 
+      {/* Random roster preview */}
+      {rosterMode === "random" && (
+        <section className="rounded border-2 border-border bg-panel p-3">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[9px] text-primary sm:text-[11px]">YOUR RANDOM ROSTER ({randomRoster.length}/{battleSize})</p>
+            <button onClick={reroll} disabled={loading} className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">🎲 Re-roll</button>
+          </div>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6 lg:grid-cols-8">
+            {randomRoster.length === 0 ? <p className="col-span-full text-[8px] text-muted-foreground">Rolling…</p> : randomRoster.map((m) => (
+              <div key={m.uid} className="flex flex-col items-center rounded border-2 border-border bg-muted p-1 text-[7px] sm:text-[9px]" title={m.name}>
+                <img src={m.sprite} alt={m.name} className="h-12 w-12" style={{ imageRendering: "pixelated", objectFit: "contain" }} />
+                <span className="truncate w-full text-center" style={{ color: m.color }}>{m.name}</span>
+                <span className="text-muted-foreground">{m.type}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Custom picker */}
       {rosterMode === "custom" && (
         <section className="rounded border-2 border-border bg-panel p-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-[9px] text-primary sm:text-[11px]">PICK YOUR FIGHTERS ({picked.length}/{battleSize})</p>
-            <div className="flex gap-2">
+            <p className="text-[9px] text-primary sm:text-[11px]">PICK YOUR FIGHTERS ({picks.length})</p>
+            <div className="flex flex-wrap gap-1">
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="search..."
                 className="rounded border-2 border-border bg-background px-2 py-1 text-[8px] sm:text-[10px]" />
-              <select value={showOnly} onChange={(e) => setShowOnly(e.target.value as "all" | "mega" | "gmax" | "regional")}
+              <select value={filterGen} onChange={(e) => setFilterGen(e.target.value === "all" ? "all" : Number(e.target.value))}
                 className="rounded border-2 border-border bg-background px-2 py-1 text-[8px] sm:text-[10px]">
-                <option value="all">All</option>
+                <option value="all">All Gens</option>
+                {[1,2,3,4,5,6,7,8,9].map((g) => <option key={g} value={g}>Gen {g}</option>)}
+              </select>
+              <select value={filterType} onChange={(e) => setFilterType(e.target.value as "all" | ElementType)}
+                className="rounded border-2 border-border bg-background px-2 py-1 text-[8px] sm:text-[10px]">
+                <option value="all">All Types</option>
+                {(Object.keys(TYPE_COLORS) as ElementType[]).map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <select value={filterRarity} onChange={(e) => setFilterRarity(e.target.value as "all" | "legendary" | "mythical" | "ultrabeast" | "normal")}
+                className="rounded border-2 border-border bg-background px-2 py-1 text-[8px] sm:text-[10px]">
+                <option value="all">All Rarities</option>
+                <option value="normal">Normal</option>
+                <option value="legendary">Legendary</option>
+                <option value="mythical">Mythical</option>
+                <option value="ultrabeast">Ultra Beast</option>
+              </select>
+              <select value={filterForm} onChange={(e) => setFilterForm(e.target.value as "all" | "mega" | "gmax" | "regional")}
+                className="rounded border-2 border-border bg-background px-2 py-1 text-[8px] sm:text-[10px]">
+                <option value="all">All Forms</option>
                 <option value="mega">Mega only</option>
-                <option value="gmax">Gigantamax only</option>
-                <option value="regional">Regional forms</option>
+                <option value="gmax">G-Max only</option>
+                <option value="regional">Regional</option>
               </select>
             </div>
           </div>
+          {filterType !== "all" && <p className="mb-1 text-[7px] text-muted-foreground sm:text-[9px]">Type filter only shows mons you've loaded. Click any mon once to load its type.</p>}
 
-          {picked.length > 0 && (
+          {picks.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2 rounded border border-border bg-background/40 p-2">
-              {picked.map((m) => (
-                <div key={m.uid} className="flex items-center gap-2 rounded border-2 px-2 py-1 text-[8px] sm:text-[10px]" style={{ borderColor: m.color }}>
-                  <img src={m.sprite} alt={m.name} className="h-7 w-7" style={{ imageRendering: "pixelated", objectFit: "contain" }} />
-                  <span style={{ color: m.color }}>{m.name}</span>
-                  <span className="text-muted-foreground">{m.type}</span>
-                  <button onClick={() => removePick(m.uid)} className="ml-1 text-red-400">×</button>
+              {picks.map((p) => (
+                <div key={p.mon.uid} className="flex items-center gap-2 rounded border-2 px-2 py-1 text-[8px] sm:text-[10px]" style={{ borderColor: p.mon.color }}>
+                  <img src={p.mon.sprite} alt={p.mon.name} className="h-7 w-7" style={{ imageRendering: "pixelated", objectFit: "contain" }} />
+                  <span style={{ color: p.mon.color }}>{p.mon.name}</span>
+                  <span className="text-muted-foreground">{p.mon.type}</span>
+                  {mode === "teams" && (
+                    <div className="flex gap-0.5">
+                      {[0, 1].map((t) => (
+                        <button key={t} onClick={() => updatePick(p.mon.uid, { team: t })}
+                          className="rounded px-1.5 py-0.5 text-[7px]"
+                          style={{ background: p.team === t ? TEAM_COLORS[t] : "transparent", color: p.team === t ? "#000" : TEAM_COLORS[t], border: `1px solid ${TEAM_COLORS[t]}` }}>
+                          {t === 0 ? "R" : "B"}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <label className="flex items-center gap-1 text-[7px]">
+                    <input type="checkbox" checked={p.evolve} onChange={(e) => updatePick(p.mon.uid, { evolve: e.target.checked })} />
+                    evolve
+                  </label>
+                  <button onClick={() => removePick(p.mon.uid)} className="ml-1 text-red-400">×</button>
                 </div>
               ))}
             </div>
@@ -806,14 +1145,15 @@ function Lobby(props: {
             {catalog.length === 0 ? (
               <p className="col-span-full text-center text-[8px] text-muted-foreground">Loading Pokédex…</p>
             ) : filtered.map((c) => {
-              const isPicked = picked.some((p) => p.id === c.id);
-              const full = picked.length >= battleSize;
+              const isPicked = picks.some((p) => p.mon.id === c.id);
               return (
-                <button key={c.id} disabled={isPicked || full || busyId === c.id}
+                <button key={c.id} disabled={isPicked || busyId === c.id}
                   onClick={() => addPick(c)}
                   className="flex flex-col items-center rounded border-2 border-border bg-muted p-1 text-[7px] hover:brightness-125 disabled:opacity-40 sm:text-[8px]"
                   title={c.display}>
-                  <img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${c.id}.png`} alt={c.display}
+                  <img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${c.id}.png`}
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = `https://play.pokemonshowdown.com/sprites/gen5/${slugify(c.name)}.png`; }}
+                    alt={c.display}
                     loading="lazy" className="h-10 w-10" style={{ imageRendering: "pixelated", objectFit: "contain" }} />
                   <span className="truncate w-full text-center">{c.display}</span>
                 </button>
@@ -825,7 +1165,7 @@ function Lobby(props: {
 
       <div className="flex items-center justify-between">
         <p className="text-[8px] text-muted-foreground sm:text-[10px]">
-          {rosterMode === "random" ? "Random rosters evolve every 15s during battle." : `Pick ${battleSize} Pokémon to start.`}
+          {rosterMode === "random" ? `Evolves every ${evolveSec}s.` : `Evolution per-mon (uses ${evolveSec}s timer).`}
         </p>
         <button onClick={onStart} disabled={!canStart || loading}
           className="rounded border-2 border-border bg-accent px-5 py-3 text-[10px] text-primary-foreground hover:brightness-110 disabled:opacity-40 sm:text-xs">
@@ -837,7 +1177,117 @@ function Lobby(props: {
 }
 
 // ============================================================
-// Battle screen
+// Shop
+// ============================================================
+function Shop({ coins, setCoins, shop, setShop, onClose }: {
+  coins: number; setCoins: (fn: (n: number) => number) => void;
+  shop: ShopState; setShop: (fn: (s: ShopState) => ShopState) => void;
+  onClose: () => void;
+}) {
+  const buyBg = (id: string, price: number) => {
+    if (shop.ownedBgs.includes(id)) { setShop((s) => ({ ...s, selectedBg: id })); return; }
+    if (coins < price) return;
+    setCoins((c) => c - price);
+    setShop((s) => ({ ...s, ownedBgs: [...s.ownedBgs, id], selectedBg: id }));
+  };
+  const buyFx = (id: string, price: number) => {
+    if (shop.ownedFx.includes(id)) { setShop((s) => ({ ...s, selectedFx: id })); return; }
+    if (coins < price) return;
+    setCoins((c) => c - price);
+    setShop((s) => ({ ...s, ownedFx: [...s.ownedFx, id], selectedFx: id }));
+  };
+  const buyAbility = (kind: "pick" | "evolve") => {
+    const price = kind === "pick" ? ABILITY_PICK_PRICE : ABILITY_EVOLVE_PRICE;
+    if (coins < price) return;
+    setCoins((c) => c - price);
+    setShop((s) => kind === "pick" ? { ...s, abilityPickWinner: s.abilityPickWinner + 1 } : { ...s, abilityManualEvolve: s.abilityManualEvolve + 1 });
+  };
+  const uploadBg = (file: File | null) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setShop((s) => ({ ...s, customBg: typeof reader.result === "string" ? reader.result : null }));
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-3 p-3 sm:p-5">
+      <header className="flex items-end justify-between">
+        <div>
+          <h1 className="text-[10px] tracking-wider text-primary sm:text-sm">SHOP</h1>
+          <p className="mt-1 text-[7px] text-muted-foreground sm:text-[9px]">Spend coins on arena themes, win effects, and abilities.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="rounded border-2 border-border bg-panel px-3 py-2 text-[9px] sm:text-[11px]">
+            <span className="text-muted-foreground">COINS </span><span className="text-primary">{coins}</span>
+          </div>
+          <button onClick={onClose} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">← Lobby</button>
+        </div>
+      </header>
+
+      <section className="rounded border-2 border-border bg-panel p-3">
+        <p className="mb-2 text-[9px] text-primary sm:text-[11px]">ARENA BACKGROUNDS</p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          {BACKGROUNDS.map((b) => {
+            const owned = shop.ownedBgs.includes(b.id);
+            const selected = shop.selectedBg === b.id;
+            return (
+              <button key={b.id} onClick={() => buyBg(b.id, b.price)}
+                className={`flex flex-col items-stretch rounded border-2 p-1 text-[7px] sm:text-[9px] ${selected ? "border-primary" : "border-border"}`}>
+                <div className={`${b.cls} h-16 rounded`} />
+                <div className="mt-1 flex items-center justify-between gap-1">
+                  <span>{b.label}</span>
+                  <span className="text-muted-foreground">{owned ? (selected ? "✓" : "owned") : `${b.price}c`}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-3">
+          <p className="text-[8px] text-muted-foreground sm:text-[10px]">Or upload a lobby background:</p>
+          <div className="mt-1 flex items-center gap-2">
+            <input type="file" accept="image/*" onChange={(e) => uploadBg(e.target.files?.[0] ?? null)}
+              className="text-[8px] text-muted-foreground" />
+            {shop.customBg && <button onClick={() => setShop((s) => ({ ...s, customBg: null }))} className="rounded border border-border bg-muted px-2 py-1 text-[7px]">clear</button>}
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded border-2 border-border bg-panel p-3">
+        <p className="mb-2 text-[9px] text-primary sm:text-[11px]">WIN EFFECTS</p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {WIN_FX.map((f) => {
+            const owned = shop.ownedFx.includes(f.id);
+            const selected = shop.selectedFx === f.id;
+            return (
+              <button key={f.id} onClick={() => buyFx(f.id, f.price)}
+                className={`rounded border-2 p-2 text-[8px] sm:text-[10px] ${selected ? "border-primary" : "border-border"}`}>
+                <p>{f.label}</p>
+                <p className="text-muted-foreground">{owned ? (selected ? "✓ selected" : "owned") : `${f.price}c`}</p>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="rounded border-2 border-border bg-panel p-3">
+        <p className="mb-2 text-[9px] text-primary sm:text-[11px]">ABILITIES (consumable)</p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <button onClick={() => buyAbility("pick")} className="rounded border-2 border-border bg-muted p-2 text-left text-[8px] sm:text-[10px]">
+            <p className="text-primary">Pick Winner</p>
+            <p className="text-muted-foreground">50% chance: the side you bet on wins. {ABILITY_PICK_PRICE}c · owned: {shop.abilityPickWinner}</p>
+          </button>
+          <button onClick={() => buyAbility("evolve")} className="rounded border-2 border-border bg-muted p-2 text-left text-[8px] sm:text-[10px]">
+            <p className="text-primary">Manual Evolve</p>
+            <p className="text-muted-foreground">During battle, evolve one of your mons instantly. {ABILITY_EVOLVE_PRICE}c · owned: {shop.abilityManualEvolve}</p>
+          </button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+// ============================================================
+// Battle screen (with pause-and-drag)
 // ============================================================
 function Battle(props: {
   monsRef: React.MutableRefObject<MonState[]>;
@@ -847,11 +1297,43 @@ function Battle(props: {
   status: "fighting" | "ended"; winnerIdx: number | null; winnerTeam: number | null;
   running: boolean; setRunning: (b: boolean) => void;
   payout: number; coins: number;
+  shop: ShopState;
+  onManualEvolve: () => void;
   backToLobby: () => void;
 }) {
-  const { monsRef, projectilesRef, popsRef, mode, log, status, winnerIdx, winnerTeam, running, setRunning, payout, coins, backToLobby } = props;
+  const { monsRef, projectilesRef, popsRef, mode, log, status, winnerIdx, winnerTeam, running, setRunning, payout, coins, shop, onManualEvolve, backToLobby } = props;
   const mons = monsRef.current;
   const now = performance.now();
+  const arenaRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ idx: number; offX: number; offY: number } | null>(null);
+
+  const bgCls = (BACKGROUNDS.find((b) => b.id === shop.selectedBg)?.cls) || "arena-grass";
+
+  const onPointerDown = (e: React.PointerEvent, idx: number) => {
+    if (running) return;
+    const wrap = arenaRef.current;
+    if (!wrap) return;
+    const rect = wrap.getBoundingClientRect();
+    const px = ((e.clientX - rect.left) / rect.width) * ARENA_W;
+    const py = ((e.clientY - rect.top) / rect.height) * ARENA_H;
+    const m = monsRef.current[idx];
+    dragRef.current = { idx, offX: px - m.pos.x, offY: py - m.pos.y };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const wrap = arenaRef.current;
+    if (!wrap) return;
+    const rect = wrap.getBoundingClientRect();
+    const px = ((e.clientX - rect.left) / rect.width) * ARENA_W;
+    const py = ((e.clientY - rect.top) / rect.height) * ARENA_H;
+    const m = monsRef.current[d.idx];
+    m.pos.x = Math.max(MON_R, Math.min(ARENA_W - MON_R, px - d.offX));
+    m.pos.y = Math.max(MON_R, Math.min(ARENA_H - MON_R, py - d.offY));
+    m.vel.x = 0; m.vel.y = 0;
+  };
+  const onPointerUp = () => { dragRef.current = null; };
 
   return (
     <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-3 p-3 sm:p-5">
@@ -860,11 +1342,15 @@ function Battle(props: {
           <h1 className="text-[10px] tracking-wider text-primary sm:text-sm">BATTLE</h1>
           <p className="mt-1 text-[7px] text-muted-foreground sm:text-[9px]">
             {mode === "teams" ? "Team Battle" : `${mons.length}-way FFA`} · COINS {coins}
+            {!running && " · PAUSED (drag mons to reposition)"}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {shop.abilityManualEvolve > 0 && status === "fighting" && (
+            <button onClick={onManualEvolve} className="rounded border-2 border-border bg-primary px-3 py-2 text-[8px] text-primary-foreground sm:text-[10px]">⚡ Evolve ({shop.abilityManualEvolve})</button>
+          )}
           <button onClick={() => setRunning(!running)} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">
-            {running ? "Pause" : "Resume"}
+            {running ? "⏸ Pause" : "▶ Resume"}
           </button>
           <button onClick={backToLobby} className="rounded border-2 border-border bg-accent px-3 py-2 text-[8px] text-primary-foreground sm:text-[10px]">
             Back to Lobby
@@ -877,6 +1363,7 @@ function Battle(props: {
           const d = m.data;
           const dead = m.hp <= 0;
           const teamCol = mode === "teams" ? TEAM_COLORS[m.team] : d.color;
+          void i;
           return (
             <div key={d.uid} className="rounded border-2 bg-panel p-2 text-center"
               style={{ borderColor: mode === "teams" ? teamCol : "var(--color-border)", boxShadow: `inset 0 -3px 0 ${d.color}`, opacity: dead ? 0.45 : 1 }}>
@@ -892,10 +1379,10 @@ function Battle(props: {
         })}
       </div>
 
-      <div className="arena-wrap relative w-full overflow-hidden rounded-xl border-4 border-border" style={{ aspectRatio: `${ARENA_W} / ${ARENA_H}` }}>
-        <div className="arena-grass absolute inset-0" />
+      <div ref={arenaRef} className="arena-wrap relative w-full overflow-hidden rounded-xl border-4 border-border" style={{ aspectRatio: `${ARENA_W} / ${ARENA_H}` }}>
+        <div className={`${bgCls} absolute inset-0`} />
         <div className="relative h-full w-full">
-          <svg viewBox={`0 0 ${ARENA_W} ${ARENA_H}`} className="absolute inset-0 h-full w-full" preserveAspectRatio="xMidYMid meet">
+          <svg viewBox={`0 0 ${ARENA_W} ${ARENA_H}`} className="absolute inset-0 h-full w-full pointer-events-none" preserveAspectRatio="xMidYMid meet">
             <defs>
               <radialGradient id="glowGold"><stop offset="0%" stopColor="#fff8b0" stopOpacity="0.9"/><stop offset="100%" stopColor="#fff8b0" stopOpacity="0"/></radialGradient>
             </defs>
@@ -932,18 +1419,35 @@ function Battle(props: {
             const size = d.isMega ? 78 : d.isGmax ? 92 : 64;
             const evolving = m.evolveFlashUntil && now < m.evolveFlashUntil;
             return (
-              <div key={d.uid} className="absolute flex flex-col items-center anim-float"
+              <div key={d.uid}
+                onPointerDown={(e) => !fainted && onPointerDown(e, i)}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerCancel={onPointerUp}
+                className={`absolute flex flex-col items-center ${running ? "anim-float" : ""}`}
                 style={{
                   left: `${(m.pos.x / ARENA_W) * 100}%`,
                   top: `${(m.pos.y / ARENA_H) * 100}%`,
                   transform: "translate(-50%, -50%)",
                   width: size, opacity: fainted ? 0.2 : 1,
+                  cursor: !running && !fainted ? "grab" : "default",
+                  touchAction: "none",
                   filter: m.hitFlash ? "brightness(2.4) saturate(0)"
                     : evolving ? "drop-shadow(0 0 18px #fff8b0) drop-shadow(0 0 8px #ffe066) brightness(1.5) saturate(1.4)"
                     : `drop-shadow(0 0 6px ${d.color})`,
                   transition: "filter 120ms",
                 }}>
-                <img src={d.sprite} alt={d.name} className={evolving ? "anim-evolve-spin" : ""}
+                <img src={d.sprite} alt={d.name} className={evolving ? "anim-evolve-spin" : ""} draggable={false}
+                  onError={(e) => {
+                    const img = e.currentTarget as HTMLImageElement;
+                    if (!img.dataset.fallback) {
+                      img.dataset.fallback = "1";
+                      img.src = `https://play.pokemonshowdown.com/sprites/gen5/${slugify(d.name.toLowerCase().replace(/ /g, "-"))}.png`;
+                    } else if (img.dataset.fallback === "1") {
+                      img.dataset.fallback = "2";
+                      img.src = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${d.id}.png`;
+                    }
+                  }}
                   style={{ width: size, height: size, imageRendering: "pixelated", objectFit: "contain" }} />
                 {!fainted && (
                   <>
@@ -992,6 +1496,7 @@ function Battle(props: {
                   {payout > 0 ? `+${payout}` : payout} coins (balance: {coins})
                 </p>
               )}
+              <p className="mt-1 text-[7px] text-muted-foreground">FX: {shop.selectedFx}</p>
               <button onClick={backToLobby} className="mt-2 rounded border-2 border-border bg-primary px-3 py-2 text-[9px] text-primary-foreground hover:brightness-110 sm:text-[10px]">
                 Back to Lobby
               </button>
@@ -1026,11 +1531,9 @@ function ProjectileFx({ p, now }: { p: Projectile; now: number }) {
     }
     case "waterjet": return (<g transform={`translate(${x} ${y}) rotate(${deg})`}>
       <ellipse rx={18} ry={5} fill="#4ea8ff" opacity={0.5} /><ellipse rx={10} ry={3} fill="#bfe6ff" />
-      <circle cx={-10} cy={-4} r={2} fill="#bfe6ff" opacity={0.7} /><circle cx={-14} cy={3} r={1.5} fill="#bfe6ff" opacity={0.6} />
     </g>);
     case "leaf": return (<g transform={`translate(${x} ${y}) rotate(${(now / 4) % 360})`}>
       <path d="M -10 0 Q 0 -10 10 0 Q 0 10 -10 0 Z" fill="#6bd36b" stroke="#2c6b2c" strokeWidth={1.2} />
-      <line x1={-8} y1={0} x2={8} y2={0} stroke="#2c6b2c" strokeWidth={0.8} />
     </g>);
     case "lightning": {
       const dx = p.pos.x - p.from.x, dy = p.pos.y - p.from.y;
@@ -1043,35 +1546,29 @@ function ProjectileFx({ p, now }: { p: Projectile; now: number }) {
     }
     case "psybeam": return (<g transform={`translate(${x} ${y})`}>
       <circle r={12} fill="#d976ff" opacity={0.35} /><circle r={7} fill="#ff8de0" /><circle r={3} fill="#fff" />
-      {[0, 60, 120, 180, 240, 300].map((a) => { const rad = (a * Math.PI) / 180 + now / 200; return <circle key={a} cx={Math.cos(rad) * 10} cy={Math.sin(rad) * 10} r={1.6} fill="#fff" />; })}
     </g>);
     case "rock": return (<g transform={`translate(${x} ${y}) rotate(${(now / 3) % 360})`}>
       <polygon points="-9,-5 -3,-9 7,-6 9,2 4,9 -6,7 -10,1" fill="#8a7a55" stroke="#3d3520" strokeWidth={1.2} />
-      <polygon points="-4,-2 -1,-4 3,-2 2,2 -3,2" fill="#b89a6c" />
     </g>);
     case "iceshard": return (<g transform={`translate(${x} ${y}) rotate(${deg})`}>
       <polygon points="-12,-3 8,0 -12,3" fill="#bfe9ff" stroke="#4ea8ff" strokeWidth={1.2} />
-      <polygon points="-6,-2 4,0 -6,2" fill="#fff" /><circle cx={-12} r={2} fill="#bfe9ff" opacity={0.6} />
     </g>);
     case "shadowball": return (<g transform={`translate(${x} ${y})`}>
       <circle r={11} fill="#5a2d8a" opacity={0.5} /><circle r={8} fill="#9d6bff" /><circle r={4} fill="#2a1043" />
-      <circle cx={2} cy={-2} r={1.5} fill="#fff" opacity={0.6} />
     </g>);
     case "dragonpulse": return (<g transform={`translate(${x} ${y}) rotate(${deg})`}>
-      <ellipse rx={14} ry={6} fill="#a366ff" opacity={0.5} /><ellipse rx={9} ry={4} fill="#f0b84a" /><circle cx={4} r={2} fill="#fff" />
+      <ellipse rx={14} ry={6} fill="#a366ff" opacity={0.5} /><ellipse rx={9} ry={4} fill="#f0b84a" />
     </g>);
     case "punch": return (<g transform={`translate(${x} ${y}) rotate(${deg})`}>
       <circle r={9} fill="#ffd9b0" stroke="#6b3a18" strokeWidth={1.5} />
-      <path d="M -3 -3 L 4 -3 M -3 0 L 4 0 M -3 3 L 4 3" stroke="#6b3a18" strokeWidth={1} fill="none" />
       <line x1={-15} y1={0} x2={-8} y2={0} stroke="#fff" strokeWidth={2} />
     </g>);
     case "bugbuzz": return (<g transform={`translate(${x} ${y})`}>
-      {[0, 120, 240].map((a) => { const rad = (a * Math.PI) / 180 + now / 80; return <ellipse key={a} cx={Math.cos(rad) * 6} cy={Math.sin(rad) * 6} rx={5} ry={2} fill="#a4d850" opacity={0.7} transform={`rotate(${(rad * 180) / Math.PI} ${Math.cos(rad) * 6} ${Math.sin(rad) * 6})`} />; })}
       <circle r={4} fill="#5a8a20" />
+      {[0, 120, 240].map((a) => { const rad = (a * Math.PI) / 180 + now / 80; return <ellipse key={a} cx={Math.cos(rad) * 6} cy={Math.sin(rad) * 6} rx={5} ry={2} fill="#a4d850" opacity={0.7} />; })}
     </g>);
     case "fairywind": return (<g transform={`translate(${x} ${y})`}>
       <circle r={10} fill="#ffb6e0" opacity={0.4} />
-      {[0, 72, 144, 216, 288].map((a) => { const rad = (a * Math.PI) / 180 + now / 150; return <path key={a} d={`M 0 0 L ${Math.cos(rad) * 8} ${Math.sin(rad) * 8}`} stroke="#fff" strokeWidth={1.4} />; })}
       <circle r={3} fill="#fff" />
     </g>);
   }
