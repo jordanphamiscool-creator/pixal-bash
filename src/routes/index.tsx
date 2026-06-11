@@ -45,6 +45,10 @@ type MonState = {
   hitFlash: number; attackFlash: number; evolveFlashUntil: number;
   data: MonData;
   evolveEnabled: boolean;
+  plusLevel: number; // 0=base, 1=plus-evolved (when no real evo available)
+  morphIds?: number[]; // for Rotom-style cyclers
+  morphIdx?: number;
+  morphLastSwap?: number;
 };
 type Projectile = {
   id: number; fromIdx: number; targetIdx: number;
