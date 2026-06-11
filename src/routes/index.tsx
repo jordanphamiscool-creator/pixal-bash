@@ -1104,7 +1104,7 @@ function Lobby(props: {
             <div>
               <p className="mb-1 text-muted-foreground">Bet amount (max {coins})</p>
               <input type="number" min={0} max={coins} value={betAmount}
-                onChange={(e) => setBetAmount(Math.max(0, Math.min(coins, Number(e.target.value) || 0)))}
+                onChange={(e) => setBetAmount(Math.max(0, Math.min(Math.max(0, coins - MIN_COINS), Number(e.target.value) || 0)))}
                 className="w-full rounded border-2 border-border bg-background px-2 py-2 font-display" />
             </div>
             <div>
