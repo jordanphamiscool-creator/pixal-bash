@@ -283,8 +283,30 @@ async function fetchMon(id: number, uid: string): Promise<MonData | null> {
       const kind = TYPE_KIND[primary];
       const atk = stats["attack"] ?? 60;
       const totalForSig = Math.max(atk, stats["special-attack"] ?? 60);
+      // Per-type signature pool — every Pokémon gets a real named move via deterministic id hash.
+      const TYPE_POOL: Record<ElementType, string[]> = {
+        normal: ["Hyper Beam","Body Slam","Giga Impact","Tri Attack","Headbutt","Take Down"],
+        fire: ["Flamethrower","Fire Blast","Inferno","Heat Wave","Overheat","Flame Charge"],
+        water: ["Hydro Pump","Surf","Aqua Tail","Waterfall","Brine","Liquidation"],
+        grass: ["Solar Beam","Energy Ball","Leaf Storm","Giga Drain","Petal Dance","Seed Bomb"],
+        electric: ["Thunder","Volt Tackle","Zap Cannon","Discharge","Wild Charge","Spark"],
+        psychic: ["Psychic","Psybeam","Psyshock","Future Sight","Stored Power","Psystrike"],
+        rock: ["Stone Edge","Rock Slide","Power Gem","Ancient Power","Head Smash","Rock Tomb"],
+        ground: ["Earthquake","Earth Power","Bulldoze","Magnitude","Bone Rush","Sand Tomb"],
+        flying: ["Hurricane","Air Slash","Brave Bird","Sky Attack","Drill Peck","Aeroblast"],
+        ice: ["Blizzard","Ice Beam","Ice Shard","Frost Breath","Icicle Crash","Avalanche"],
+        ghost: ["Shadow Ball","Shadow Sneak","Hex","Phantom Force","Astral Barrage","Spectral Thief"],
+        dragon: ["Dragon Pulse","Outrage","Draco Meteor","Dragon Claw","Dragon Rush","Spacial Rend"],
+        dark: ["Dark Pulse","Crunch","Foul Play","Night Slash","Sucker Punch","Knock Off"],
+        steel: ["Iron Tail","Flash Cannon","Meteor Mash","Iron Head","Steel Beam","Bullet Punch"],
+        fighting: ["Close Combat","Dynamic Punch","Aura Sphere","Sky Uppercut","Cross Chop","Sacred Sword"],
+        bug: ["Bug Buzz","X-Scissor","Megahorn","Signal Beam","First Impression","Lunge"],
+        fairy: ["Moonblast","Dazzling Gleam","Play Rough","Disarming Voice","Misty Explosion","Spirit Break"],
+        poison: ["Sludge Bomb","Toxic","Gunk Shot","Poison Jab","Cross Poison","Acid Spray"],
+      };
+      const pool = TYPE_POOL[primary] || TYPE_POOL.normal;
       const sigDmg = sig?.dmg ?? Math.round(10 + totalForSig * 0.12);
-      const sigName = sig?.name ?? GENERIC_MOVES[primary][1];
+      const sigName = sig?.name ?? pool[speciesId % pool.length];
       const sigKind = sig?.kind ?? kind;
       const basicDmg = Math.round(5 + atk * 0.05);
       const name = titleCase(j.name as string);
