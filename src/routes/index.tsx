@@ -519,7 +519,8 @@ function Game() {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       if (runningRef.current && status === "fighting") step(dt, now);
-      if (now - lastRenderRef.current > 33) {
+      // Throttle React renders to ~16fps so HP bars/log update without thrashing
+      if (now - lastRenderRef.current > 62) {
         lastRenderRef.current = now;
         force((n) => (n + 1) % 1_000_000);
       }
