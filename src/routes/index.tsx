@@ -786,7 +786,11 @@ function Game() {
       } else {
         // Custom mode: each pick has a team and an evolve flag.
         // If evolve is on but mon has no evolveTo, attach chain now.
-        const prepared = await Promise.all(picks.slice(0, battleSize).map(async (p, i) => {
+        // If user picked more than battleSize, randomly sample down (keeps custom-team logic working).
+        const subset = picks.length > battleSize
+          ? [...picks].sort(() => Math.random() - 0.5).slice(0, battleSize)
+          : picks;
+        const prepared = await Promise.all(subset.map(async (p, i) => {
           let mon = p.mon;
           if (p.evolve && !mon.evolveTo) {
             const linked = await buildEvolutionForPick(mon.id, `c${i}`);
