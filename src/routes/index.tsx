@@ -1029,6 +1029,15 @@ function Lobby(props: {
             <span className="text-primary">{coins}</span>
           </div>
           <button onClick={openShop} className="rounded border-2 border-border bg-primary px-3 py-2 text-[8px] text-primary-foreground sm:text-[10px]">🛒 Shop</button>
+          <button onClick={() => {
+            const on = localStorage.getItem("ppb-infinite") === "1";
+            if (on) { localStorage.removeItem("ppb-infinite"); writeCoins(coins > 999000 ? STARTING_COINS : coins); location.reload(); }
+            else { localStorage.setItem("ppb-infinite", "1"); localStorage.setItem("ppb-coins", "999999"); location.reload(); }
+          }} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">
+            {typeof window !== "undefined" && localStorage.getItem("ppb-infinite") === "1" ? "♾ ON" : "♾ Coins"}
+          </button>
+          <button onClick={() => alert("Catch & Gym mode is in early scaffold — coming next update! Pick starters, walk in grass, catch wild Pokémon, then challenge Rock/Water/Electric/Grass gym leaders.")}
+            className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">🎒 Catch & Gym</button>
           <button onClick={() => setSoundOn(!soundOn)} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">
             {soundOn ? "🔊 Sound" : "🔇 Muted"}
           </button>
