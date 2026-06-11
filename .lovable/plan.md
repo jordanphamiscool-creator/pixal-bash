@@ -1,69 +1,53 @@
-This is a large set of changes. I'll ship them in one pass, focused on the file `src/routes/index.tsx` plus a small CSS tweak. Here's exactly what I'll do.
 
-## Performance
-- Throttle the React re-render loop to ~30fps (game logic still runs at full rAF) so the DOM update cost drops in half.
-- Reuse sprite `<img>` nodes with stable keys to stop layout thrash.
-- Skip drawing offscreen/dead projectiles and cap projectile array length.
-- Preload sprite + cry the moment a mon is locked in (so battle start is smooth).
-- Cache catalog + species data in `localStorage` so repeat lobbies don't re-hit the API.
+Big batch of fixes + features for `src/routes/index.tsx` and `src/styles.css`. One mode (the existing auto-battler) gets a lot of polish, plus a new lightweight "Catch & Gym" mode scaffolded so we can flesh it out next round.
 
-## Balance (longer fights)
-- Cut all damage globally (~40%).
-- Reduce stat influence: damage now uses `0.7 + 0.6 * (atk/100)` instead of scaling 1:1, so a Caterpie still loses to Dialga but a mid-tier mon isn't useless.
-- Bump base HP multiplier so fights last roughly 2–3× longer.
-- Type effectiveness chart unchanged.
+## 1. Power & evolution rebalance
+- **Mega forms**: damage ×1.6, HP ×1.5 (was ~1.3/1.3).
+- **G-Max forms**: damage ×1.7, HP ×1.8 (chonky, hard hits).
+- **Plus Evolution** (new tier between normal final and Mega/G-Max): when a Pokémon has no Mega/Gmax/regional variety available, the evolution timer instead grants "+ Form": damage ×1.25, HP ×1.25, speed ×1.1, glowing aura, prefix "✦". Cheaper than Mega so picking a Caterpie still isn't useless.
+- All applied as multipliers on the existing `MonData` at evolve time.
 
-## Evolution
-- New lobby slider: **Evolution timer** from 6s to 25s (also applies in custom mode).
-- New custom-mode toggle per picked mon: **"Evolve this one"** — when on, that mon evolves/megas/Gmaxes at the timer tick.
-- Final-stage logic: when a mon is already at its last evolution but has a Mega / G-Max / alternate form, the timer turns it into that form. If multiple alt-forms exist (e.g. Mega X + Mega Y, or Mega + G-Max), one is picked at random. Forms are looked up from PokéAPI species' `varieties` list.
+## 2. Lobby QoL
+- **Delete All Selected** button next to the picker.
+- **Infinite Coins** toggle (dev/test) → sets coins to 999,999 and locks writes.
+- **Coin floor**: every shop purchase and every losing bet clamps balance to **≥ 10**. Bets above `coins - 10` are auto-capped. Shop buttons disable if `coins - price < 10`.
+- **Custom lobby background**: upload image (data URL, `localStorage["ppb-lobby-bg"]`) + reset-to-default button. Already partly stubbed; finishing the UI.
+- **Pick more than battle size**: if `picks.length > battleSize`, randomly draw `battleSize` from picks at battle start (keep team distribution where possible).
 
-## Random roster fix
-- Old code was biased toward starters/legendaries via the curated evo lines. New random pulls uniformly from the full catalog (1..1025 species + their varieties), then attaches evolution chain on the fly via `/pokemon-species/{id}/evolution_chain`.
-- Lobby now **shows the random roster up front** so you can bet before the round starts.
+## 3. Sorting fixes
+- **Type filter bug**: today it only checks `mon.type` which is the primary type stored on the curated list. Fix: load secondary types from PokéAPI (`/pokemon/{id}`), cache, and match on either; also widen the per-gen catalog so filtering by Type across "All gens" actually iterates all 1025 ids, not just the curated subset.
+- Add **"Evolutions" sort**: bucket 1/2/3/4, where 4 = has any of Mega/G-Max/Regional/Plus past the base. Computed from species `varieties` + chain length.
+- Verify Generation + Rarity filters still apply on top of Type (currently they short-circuit) — combine with AND, not OR.
 
-## Custom teams
-- In Teams mode, each picked slot has a **Red / Blue** team selector — so 7v1, 5v3, etc. are all valid as long as both teams have ≥1 mon.
-- Battle size slider now goes 2–14.
+## 4. Performance
+- Drop React state updates from ~30fps → **15fps** for non-critical UI (HP bars, timers). Projectile rendering stays at rAF via direct DOM refs (escape hatch: `useRef` + `transform` writes, no re-render).
+- Replace per-frame `.filter()`/`.map()` allocations in `step()` with index loops + in-place splicing.
+- Skip `<img>` re-render by keying purely on `mon.uid` and never mutating the src attr; sprite swap on evolve uses a separate layer.
+- Stop reading `localStorage` inside render — read once, keep in state.
 
-## Pause & drag
-- New **Pause** button (already had Pause/Resume; now while paused you can click+drag any mon around the arena to reposition it). Drag uses pointer events; release resumes positioning but stays paused until you click Resume.
+## 5. Special attack coverage
+- Extend `SPECIALS` map so every species 1..1025 either has a hand-picked entry or maps via a deterministic `signatureFor(id, type)` that picks from a per-type pool of ~6 named moves (e.g. Electric → Thunderbolt / Volt Tackle / Zap Cannon / Discharge / Wild Charge / Spark). Result: no two Pokémon of the same type share the same exact name unless coincident, and every mon shows a real move name.
 
-## Missing sprites (Gen 9 megas etc.)
-- Sprite fallback chain extended: animated → official-artwork → `front_default` → **Pokémon Showdown** sprite by name (`https://play.pokemonshowdown.com/sprites/gen5/{slug}.png`) → **Serebii** dex artwork by id → generic type-colored placeholder. The Showdown CDN covers most fan-named forms PokéAPI lacks images for.
+## 6. Battle screen polish
+- **Next-evolution countdown**: small badge under each mon showing `Evo in 8s` (or `Mega in 8s` / `Plus in 8s`) using the per-mon `evolveTimer`. Hides when no evolution path.
+- **Rotom (#479)**: every 3 seconds, rotate sprite + type + signature across its forms (Heat/Wash/Frost/Fan/Mow). Implemented as a per-mon "morph" interval set up at battle start when `speciesId === 479`.
+- **Fullscreen button**: requests fullscreen on the arena wrapper via `el.requestFullscreen()` and scales the arena to viewport with CSS `transform: scale(fit)`.
 
-## Shop & coins
-- Starting coins: **250** (existing players keep their current balance unless it's the default 100, in which case it's bumped to 250 on first load of this version via a migration flag).
-- New **Shop** tab in the lobby with three categories:
-  - **Backgrounds** (5 options: Grass, Sand, Snow, Volcano, Lobby-fanart). Owned ones are selectable.
-  - **Win effects** (3: Confetti, Fireworks, Pixel rain).
-  - **Abilities** (2 consumable powers usable once per round): **Pick Winner** (50% chance, costs 75 coins) and **Manual Evolve** (force-evolve a friendly mon now, 40 coins).
-- Custom lobby background: upload an image (stored as data-URL in localStorage) to use as the lobby backdrop.
-- All shop state persisted in `localStorage` under `ppb-shop-v1`.
+## 7. New mode: Catch & Gym (scaffold)
+- New top-level screen toggle in lobby: **Auto-Battler** | **Catch & Gym**.
+- Catch & Gym v1 (scaffold only — playable loop, not a full game):
+  - **Starter pick** (3 starters from a random gen).
+  - **Grass walking**: arrow keys / on-screen dpad on a tiny 10×10 grid, random encounter → mini battle (reuses the existing battle engine, 1v1) → "Throw Pokéball" button with catch chance based on remaining HP %.
+  - **Team box**: caught Pokémon stored in `localStorage["ppb-team"]`, max 6 active.
+  - **Gym Leaders**: 4 placeholder gyms (Rock/Water/Electric/Grass leaders), each a 3v3 fight. Beat all 4 → "Champion" screen.
+  - Stats AND type matchups matter heavily here: damage formula uses real `atk/def` ratios (no flattening), and crit chance scales with speed.
+  - Abilities: pull `abilities[0]` from PokéAPI per mon; light effect map (e.g. Blaze → +20% fire dmg under 33% HP, Torrent same for water, Static → 20% chance to paralyze on hit = skip one attack). Unmapped abilities just display the name.
+- This mode lives in the same file under `screen === "catch"` so the existing game is untouched.
 
-## Pre-bet visibility
-- Random rosters render in the lobby with name + sprite + type before the **Place bet / Start** button is enabled, so you can bet meaningfully on random battles too.
-
-## Sorting filters (custom picker)
-- New filter bar: **Generation** (1–9), **Type** (all 18), **Rarity** (Legendary / Mythical / Ultra Beast / Normal). Lists derived from hard-coded id ranges and a small rarity set (no extra API calls needed for gen/rarity buckets).
-
-## Technical sketch
-
+## 8. Files
 ```text
-src/routes/index.tsx
-  + SHOP state, persisted              (~120 lines)
-  + filters (gen/type/rarity)           (~60 lines)
-  + custom team assignment UI           (~40 lines)
-  + evolution timer slider + per-mon evolve toggle
-  + pause-drag pointer handlers         (~50 lines)
-  + alt-form resolution via species varieties
-  + sprite fallback chain util
-  + render throttle (30fps)
-  - damage/HP balance tweaks
-  - random roster: uniform sample from full catalog
-
-src/styles.css
-  + bg-* utility classes for shop backgrounds
+src/routes/index.tsx      ← almost all changes
+src/styles.css            ← .anim-plus-aura, .fullscreen-arena
 ```
 
-No backend changes, no new packages. Everything stays client-side and uses `localStorage`.
+No new packages, no backend. All persistent state via `localStorage`.

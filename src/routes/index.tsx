@@ -45,6 +45,10 @@ type MonState = {
   hitFlash: number; attackFlash: number; evolveFlashUntil: number;
   data: MonData;
   evolveEnabled: boolean;
+  plusLevel: number; // 0=base, 1=plus-evolved (when no real evo available)
+  morphIds?: number[]; // for Rotom-style cyclers
+  morphIdx?: number;
+  morphLastSwap?: number;
 };
 type Projectile = {
   id: number; fromIdx: number; targetIdx: number;
@@ -181,8 +185,10 @@ function readCoins(): number {
 }
 function writeCoins(n: number) {
   if (typeof window === "undefined") return;
-  localStorage.setItem("ppb-coins", String(Math.max(0, Math.round(n))));
+  if (localStorage.getItem("ppb-infinite") === "1") { localStorage.setItem("ppb-coins", "999999"); return; }
+  localStorage.setItem("ppb-coins", String(Math.max(10, Math.round(n))));
 }
+const MIN_COINS = 10;
 
 // ============================================================
 // Signature moves (curated, falls back to generic)
@@ -258,7 +264,7 @@ function bestSprite(j: { sprites?: { other?: Record<string, { front_default?: st
 async function fetchMon(id: number, uid: string): Promise<MonData | null> {
   let cached = POKE_CACHE.get(id);
   if (!cached) {
-    const stored = lsGet<MonData | null>(`ppb-mon-${id}`, null);
+    const stored = lsGet<MonData | null>(`ppb-mon-v2-${id}`, null);
     if (stored) { POKE_CACHE.set(id, stored); cached = stored; }
   }
   if (!cached) {
@@ -277,8 +283,30 @@ async function fetchMon(id: number, uid: string): Promise<MonData | null> {
       const kind = TYPE_KIND[primary];
       const atk = stats["attack"] ?? 60;
       const totalForSig = Math.max(atk, stats["special-attack"] ?? 60);
+      // Per-type signature pool — every Pokémon gets a real named move via deterministic id hash.
+      const TYPE_POOL: Record<ElementType, string[]> = {
+        normal: ["Hyper Beam","Body Slam","Giga Impact","Tri Attack","Headbutt","Take Down"],
+        fire: ["Flamethrower","Fire Blast","Inferno","Heat Wave","Overheat","Flame Charge"],
+        water: ["Hydro Pump","Surf","Aqua Tail","Waterfall","Brine","Liquidation"],
+        grass: ["Solar Beam","Energy Ball","Leaf Storm","Giga Drain","Petal Dance","Seed Bomb"],
+        electric: ["Thunder","Volt Tackle","Zap Cannon","Discharge","Wild Charge","Spark"],
+        psychic: ["Psychic","Psybeam","Psyshock","Future Sight","Stored Power","Psystrike"],
+        rock: ["Stone Edge","Rock Slide","Power Gem","Ancient Power","Head Smash","Rock Tomb"],
+        ground: ["Earthquake","Earth Power","Bulldoze","Magnitude","Bone Rush","Sand Tomb"],
+        flying: ["Hurricane","Air Slash","Brave Bird","Sky Attack","Drill Peck","Aeroblast"],
+        ice: ["Blizzard","Ice Beam","Ice Shard","Frost Breath","Icicle Crash","Avalanche"],
+        ghost: ["Shadow Ball","Shadow Sneak","Hex","Phantom Force","Astral Barrage","Spectral Thief"],
+        dragon: ["Dragon Pulse","Outrage","Draco Meteor","Dragon Claw","Dragon Rush","Spacial Rend"],
+        dark: ["Dark Pulse","Crunch","Foul Play","Night Slash","Sucker Punch","Knock Off"],
+        steel: ["Iron Tail","Flash Cannon","Meteor Mash","Iron Head","Steel Beam","Bullet Punch"],
+        fighting: ["Close Combat","Dynamic Punch","Aura Sphere","Sky Uppercut","Cross Chop","Sacred Sword"],
+        bug: ["Bug Buzz","X-Scissor","Megahorn","Signal Beam","First Impression","Lunge"],
+        fairy: ["Moonblast","Dazzling Gleam","Play Rough","Disarming Voice","Misty Explosion","Spirit Break"],
+        poison: ["Sludge Bomb","Toxic","Gunk Shot","Poison Jab","Cross Poison","Acid Spray"],
+      };
+      const pool = TYPE_POOL[primary] || TYPE_POOL.normal;
       const sigDmg = sig?.dmg ?? Math.round(10 + totalForSig * 0.12);
-      const sigName = sig?.name ?? GENERIC_MOVES[primary][1];
+      const sigName = sig?.name ?? pool[speciesId % pool.length];
       const sigKind = sig?.kind ?? kind;
       const basicDmg = Math.round(5 + atk * 0.05);
       const name = titleCase(j.name as string);
@@ -291,7 +319,7 @@ async function fetchMon(id: number, uid: string): Promise<MonData | null> {
         isMega: isMegaName(j.name), isGmax: isGmaxName(j.name), isRegional: isRegionalName(j.name),
       };
       POKE_CACHE.set(id, cached);
-      lsSet(`ppb-mon-${id}`, cached);
+      lsSet(`ppb-mon-v2-${id}`, cached);
     } catch { return null; }
   }
   return { ...cached, uid };
@@ -513,7 +541,8 @@ function Game() {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       if (runningRef.current && status === "fighting") step(dt, now);
-      if (now - lastRenderRef.current > 33) {
+      // Throttle React renders to ~16fps so HP bars/log update without thrashing
+      if (now - lastRenderRef.current > 62) {
         lastRenderRef.current = now;
         force((n) => (n + 1) % 1_000_000);
       }
@@ -546,9 +575,11 @@ function Game() {
       setPayout(win);
       pushLog(`🎉 You won ${win} coins on your bet!`, "#ffd83a");
     } else {
-      setCoins((c) => Math.max(0, c - bet.amount));
-      setPayout(-bet.amount);
-      pushLog(`💸 You lost ${bet.amount} coins on your bet.`, "#ff7777");
+      const loss = Math.min(bet.amount, Math.max(0, monsRef.current.length ? 99999 : 0));
+      const newBal = Math.max(MIN_COINS, (lsGet<number>("ppb-coins", STARTING_COINS) as number) - loss);
+      setCoins(newBal);
+      setPayout(-(loss));
+      pushLog(`💸 You lost ${loss} coins on your bet. (floor ${MIN_COINS})`, "#ff7777");
     }
   };
 
@@ -605,18 +636,36 @@ function Game() {
 
       // Evolution
       m.evolveTimer += dt * 1000;
-      if (m.evolveEnabled && d.evolveTo && m.evolveTimer >= evolveMsRef.current) {
-        const next = d.evolveTo;
-        const oldName = d.name;
-        m.data = { ...next, uid: d.uid };
-        m.evolveTimer = 0;
-        m.evolveFlashUntil = now + EVOLVE_FLASH_MS;
-        const newMax = Math.round(120 + next.baseHp * 1.8);
-        const ratio = m.hp / m.maxHp;
-        m.maxHp = newMax;
-        m.hp = Math.min(newMax, Math.max(40, Math.round(newMax * ratio + 50)));
-        pushLog(`${oldName} evolved into ${next.name}!`, next.color);
-        if (soundRef.current) playSound(next.cry, volume);
+      if (m.evolveEnabled && m.evolveTimer >= evolveMsRef.current) {
+        if (d.evolveTo) {
+          const next = d.evolveTo;
+          const oldName = d.name;
+          m.data = { ...next, uid: d.uid };
+          m.evolveTimer = 0;
+          m.evolveFlashUntil = now + EVOLVE_FLASH_MS;
+          const newMax = Math.round(120 + next.baseHp * 1.8);
+          const ratio = m.hp / m.maxHp;
+          m.maxHp = newMax;
+          m.hp = Math.min(newMax, Math.max(40, Math.round(newMax * ratio + 50)));
+          pushLog(`${oldName} evolved into ${next.name}!`, next.color);
+          if (soundRef.current) playSound(next.cry, volume);
+        } else if (m.plusLevel === 0) {
+          // Plus evolution — no Mega/Gmax/regional available, but still grant a power boost
+          const oldName = d.name;
+          m.data = { ...d, name: d.name.startsWith("✦") ? d.name : `✦${d.name}`,
+            baseAtk: Math.round(d.baseAtk * 1.25), baseDef: Math.round(d.baseDef * 1.15),
+            baseSpd: Math.round(d.baseSpd * 1.1), baseHp: Math.round(d.baseHp * 1.25),
+            signature: { ...d.signature, dmg: Math.round(d.signature.dmg * 1.25) },
+            basic: { ...d.basic, dmg: Math.round(d.basic.dmg * 1.25) } };
+          m.plusLevel = 1;
+          m.evolveTimer = 0;
+          m.evolveFlashUntil = now + EVOLVE_FLASH_MS;
+          const newMax = Math.round(m.maxHp * 1.25);
+          m.maxHp = newMax;
+          m.hp = Math.min(newMax, Math.round(m.hp + newMax * 0.25));
+          pushLog(`${oldName} powered up to ✦Plus form!`, d.color);
+          if (soundRef.current) playSound(d.cry, volume);
+        }
       }
 
       const tgt = nearestEnemy(i);
@@ -630,14 +679,21 @@ function Game() {
       const moveSpeed = 60 + d.baseSpd * 0.35;
       m.vel.x = (dx / dist) * seek + tangent.x * moveSpeed * 0.6 + rand(-10, 10);
       m.vel.y = (dy / dist) * seek + tangent.y * moveSpeed * 0.6 + rand(-10, 10);
-      mons.forEach((o, j) => {
-        if (i === j || o.hp <= 0) return;
+      // separation: only against nearby mons (skip squared scan for far ones)
+      for (let j = 0; j < mons.length; j++) {
+        if (i === j) continue;
+        const o = mons[j];
+        if (o.hp <= 0) continue;
         const ox = m.pos.x - o.pos.x, oy = m.pos.y - o.pos.y;
+        if (Math.abs(ox) > 80 || Math.abs(oy) > 80) continue;
         const od = Math.hypot(ox, oy) || 1;
         if (od < MON_R * 2.4) { m.vel.x += (ox / od) * 80; m.vel.y += (oy / od) * 80; }
-      });
+      }
       m.pos.x = Math.max(MON_R, Math.min(ARENA_W - MON_R, m.pos.x + m.vel.x * dt));
       m.pos.y = Math.max(MON_R, Math.min(ARENA_H - MON_R, m.pos.y + m.vel.y * dt));
+
+      // Form-based damage multipliers
+      const formMul = d.isGmax ? 1.7 : d.isMega ? 1.6 : (m.plusLevel > 0 ? 1.0 : 1.0); // plus already baked into stats
 
       const atkCd = Math.max(700, ABILITY_COOLDOWN_BASE * (80 / Math.max(20, d.baseSpd)));
       if (now - m.lastAttack >= atkCd && dist <= ATTACK_RANGE + 60) {
@@ -645,10 +701,9 @@ function Game() {
         m.attackFlash = now + 300;
         const crit = Math.random() < 0.15;
         const eff = typeMult(d.type, t.data.type);
-        // Flattened stat influence (less determinism, more randomness)
         const atkMul = 0.7 + 0.6 * (d.baseAtk / 100);
         const defReduction = 1 - Math.min(0.55, t.data.baseDef / 360);
-        const dmg = Math.max(1, Math.round(d.basic.dmg * atkMul * (crit ? 1.5 : 1) * eff * defReduction * (0.75 + Math.random() * 0.5)));
+        const dmg = Math.max(1, Math.round(d.basic.dmg * atkMul * formMul * (crit ? 1.5 : 1) * eff * defReduction * (0.75 + Math.random() * 0.5)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
         if (projectilesRef.current.length < 60) {
           projectilesRef.current.push({
@@ -668,7 +723,7 @@ function Game() {
         const eff = typeMult(d.type, t.data.type);
         const atkMul = 0.8 + 0.6 * (d.baseAtk / 100);
         const defReduction = 1 - Math.min(0.5, t.data.baseDef / 380);
-        const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * (crit ? 1.7 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
+        const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * formMul * (crit ? 1.7 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
         if (projectilesRef.current.length < 60) {
           projectilesRef.current.push({
@@ -753,7 +808,11 @@ function Game() {
       } else {
         // Custom mode: each pick has a team and an evolve flag.
         // If evolve is on but mon has no evolveTo, attach chain now.
-        const prepared = await Promise.all(picks.slice(0, battleSize).map(async (p, i) => {
+        // If user picked more than battleSize, randomly sample down (keeps custom-team logic working).
+        const subset = picks.length > battleSize
+          ? [...picks].sort(() => Math.random() - 0.5).slice(0, battleSize)
+          : picks;
+        const prepared = await Promise.all(subset.map(async (p, i) => {
           let mon = p.mon;
           if (p.evolve && !mon.evolveTo) {
             const linked = await buildEvolutionForPick(mon.id, `c${i}`);
@@ -799,7 +858,8 @@ function Game() {
           lastAttack: -rand(0, 1500),
           lastSpecial: -rand(0, SPECIAL_COOLDOWN_BASE),
           evolveTimer: 0, hitFlash: 0, attackFlash: 0, evolveFlashUntil: 0,
-          evolveEnabled: entry.evolve && !!d.evolveTo,
+          evolveEnabled: entry.evolve && (!!d.evolveTo || true), // also enable for plus-evolution
+          plusLevel: 0,
         };
       });
 
@@ -807,6 +867,7 @@ function Game() {
       projectilesRef.current = [];
       popsRef.current = [];
       evolveMsRef.current = evolveSec * 1000;
+      if (typeof window !== "undefined") (window as unknown as { __ppbEvolveMs?: number }).__ppbEvolveMs = evolveSec * 1000;
 
       let resolvedTarget: string | null = null;
       if (betAmount > 0 && betAmount <= coins && betTarget) {
@@ -914,18 +975,31 @@ function Lobby(props: {
   const [filterGen, setFilterGen] = useState<"all" | number>("all");
   const [filterRarity, setFilterRarity] = useState<"all" | "legendary" | "mythical" | "ultrabeast" | "normal">("all");
   const [filterForm, setFilterForm] = useState<"all" | "mega" | "gmax" | "regional">("all");
+  const [filterEvos, setFilterEvos] = useState<"all" | "1" | "2" | "3" | "4">("all");
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [typeIndex, setTypeIndex] = useState<Map<number, ElementType>>(new Map());
+  const [typeIdSet, setTypeIdSet] = useState<Set<number> | null>(null);
 
   useEffect(() => { loadCatalog().then(setCatalog).catch(() => {}); }, []);
 
-  // For type/rarity filtering we need to know each entry's type. Use cached mon data only;
-  // no extra fetches. Build incrementally from POKE_CACHE.
+  // Type filter: when user picks a type, fetch the official type endpoint once and cache.
   useEffect(() => {
-    const m = new Map<number, ElementType>();
-    POKE_CACHE.forEach((md, id) => m.set(id, md.type));
-    setTypeIndex(m);
-  }, [catalog]);
+    if (filterType === "all") { setTypeIdSet(null); return; }
+    const cacheKey = `ppb-type-${filterType}`;
+    const cached = lsGet<number[] | null>(cacheKey, null);
+    if (cached) { setTypeIdSet(new Set(cached)); return; }
+    let cancelled = false;
+    fetch(`https://pokeapi.co/api/v2/type/${filterType}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return;
+        const ids = (j.pokemon as { pokemon: { url: string } }[])
+          .map((p) => Number(p.pokemon.url.match(/\/pokemon\/(\d+)\//)?.[1] || 0))
+          .filter((n) => n > 0);
+        lsSet(cacheKey, ids);
+        setTypeIdSet(new Set(ids));
+      }).catch(() => setTypeIdSet(new Set()));
+    return () => { cancelled = true; };
+  }, [filterType]);
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -935,14 +1009,17 @@ function Lobby(props: {
       if (filterForm === "regional" && !isRegionalName(c.name)) return false;
       if (filterGen !== "all" && c.id <= 1025 && genOf(c.id) !== filterGen) return false;
       if (filterRarity !== "all" && c.id <= 1025 && rarityOf(c.id) !== filterRarity) return false;
-      if (filterType !== "all") {
-        const t = typeIndex.get(c.id);
-        if (!t || t !== filterType) return false;
+      if (filterType !== "all" && typeIdSet && !typeIdSet.has(c.id)) return false;
+      if (filterEvos !== "all") {
+        // Approx: 4 = has Mega/Gmax/regional in name; otherwise we can't know without an extra fetch.
+        const hasSpecial = isMegaName(c.name) || isGmaxName(c.name) || isRegionalName(c.name);
+        if (filterEvos === "4" && !hasSpecial) return false;
+        if (filterEvos !== "4" && hasSpecial) return false;
       }
       if (!s) return true;
       return c.name.includes(s) || c.display.toLowerCase().includes(s);
-    }).slice(0, 240);
-  }, [catalog, search, filterType, filterGen, filterRarity, filterForm, typeIndex]);
+    }).slice(0, 320);
+  }, [catalog, search, filterType, filterGen, filterRarity, filterForm, filterEvos, typeIdSet]);
 
   const addPick = async (entry: CatalogEntry) => {
     if (picks.length >= 14) return;
@@ -950,11 +1027,10 @@ function Lobby(props: {
     const m = await fetchMon(entry.id, `pick-${entry.id}-${Date.now()}`);
     setBusyId(null);
     if (m) {
-      // ensure type index updated
-      setTypeIndex((idx) => { const n = new Map(idx); n.set(entry.id, m.type); return n; });
       setPicks([...picks, { mon: m, team: picks.length % 2, evolve: true }]);
     }
   };
+  const clearAllPicks = () => setPicks([]);
   const removePick = (uid: string) => setPicks(picks.filter((p) => p.mon.uid !== uid));
   const updatePick = (uid: string, patch: Partial<Pick>) =>
     setPicks(picks.map((p) => (p.mon.uid === uid ? { ...p, ...patch } : p)));
@@ -976,6 +1052,15 @@ function Lobby(props: {
             <span className="text-primary">{coins}</span>
           </div>
           <button onClick={openShop} className="rounded border-2 border-border bg-primary px-3 py-2 text-[8px] text-primary-foreground sm:text-[10px]">🛒 Shop</button>
+          <button onClick={() => {
+            const on = localStorage.getItem("ppb-infinite") === "1";
+            if (on) { localStorage.removeItem("ppb-infinite"); writeCoins(coins > 999000 ? STARTING_COINS : coins); location.reload(); }
+            else { localStorage.setItem("ppb-infinite", "1"); localStorage.setItem("ppb-coins", "999999"); location.reload(); }
+          }} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">
+            {typeof window !== "undefined" && localStorage.getItem("ppb-infinite") === "1" ? "♾ ON" : "♾ Coins"}
+          </button>
+          <button onClick={() => alert("Catch & Gym mode is in early scaffold — coming next update! Pick starters, walk in grass, catch wild Pokémon, then challenge Rock/Water/Electric/Grass gym leaders.")}
+            className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">🎒 Catch & Gym</button>
           <button onClick={() => setSoundOn(!soundOn)} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">
             {soundOn ? "🔊 Sound" : "🔇 Muted"}
           </button>
@@ -1019,7 +1104,7 @@ function Lobby(props: {
             <div>
               <p className="mb-1 text-muted-foreground">Bet amount (max {coins})</p>
               <input type="number" min={0} max={coins} value={betAmount}
-                onChange={(e) => setBetAmount(Math.max(0, Math.min(coins, Number(e.target.value) || 0)))}
+                onChange={(e) => setBetAmount(Math.max(0, Math.min(Math.max(0, coins - MIN_COINS), Number(e.target.value) || 0)))}
                 className="w-full rounded border-2 border-border bg-background px-2 py-2 font-display" />
             </div>
             <div>
@@ -1109,9 +1194,17 @@ function Lobby(props: {
                 <option value="gmax">G-Max only</option>
                 <option value="regional">Regional</option>
               </select>
+              <select value={filterEvos} onChange={(e) => setFilterEvos(e.target.value as "all" | "1" | "2" | "3" | "4")}
+                className="rounded border-2 border-border bg-background px-2 py-1 text-[8px] sm:text-[10px]" title="Evolutions">
+                <option value="all">Any evo</option>
+                <option value="1">Base/no special</option>
+                <option value="4">4+ (Mega/Gmax/Regional)</option>
+              </select>
+              {picks.length > 0 && (
+                <button onClick={clearAllPicks} className="rounded border-2 border-border bg-destructive/40 px-2 py-1 text-[8px] sm:text-[10px]">🗑 Clear all</button>
+              )}
             </div>
           </div>
-          {filterType !== "all" && <p className="mb-1 text-[7px] text-muted-foreground sm:text-[9px]">Type filter only shows mons you've loaded. Click any mon once to load its type.</p>}
 
           {picks.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2 rounded border border-border bg-background/40 p-2">
@@ -1186,19 +1279,19 @@ function Shop({ coins, setCoins, shop, setShop, onClose }: {
 }) {
   const buyBg = (id: string, price: number) => {
     if (shop.ownedBgs.includes(id)) { setShop((s) => ({ ...s, selectedBg: id })); return; }
-    if (coins < price) return;
+    if (coins - price < MIN_COINS) return;
     setCoins((c) => c - price);
     setShop((s) => ({ ...s, ownedBgs: [...s.ownedBgs, id], selectedBg: id }));
   };
   const buyFx = (id: string, price: number) => {
     if (shop.ownedFx.includes(id)) { setShop((s) => ({ ...s, selectedFx: id })); return; }
-    if (coins < price) return;
+    if (coins - price < MIN_COINS) return;
     setCoins((c) => c - price);
     setShop((s) => ({ ...s, ownedFx: [...s.ownedFx, id], selectedFx: id }));
   };
   const buyAbility = (kind: "pick" | "evolve") => {
     const price = kind === "pick" ? ABILITY_PICK_PRICE : ABILITY_EVOLVE_PRICE;
-    if (coins < price) return;
+    if (coins - price < MIN_COINS) return;
     setCoins((c) => c - price);
     setShop((s) => kind === "pick" ? { ...s, abilityPickWinner: s.abilityPickWinner + 1 } : { ...s, abilityManualEvolve: s.abilityManualEvolve + 1 });
   };
@@ -1335,6 +1428,34 @@ function Battle(props: {
   };
   const onPointerUp = () => { dragRef.current = null; };
 
+  // Rotom (#479) form rotator — swap form every 3 seconds.
+  useEffect(() => {
+    const ROTOM_FORMS = [479, 10008, 10009, 10010, 10011, 10012];
+    const rotomMons = monsRef.current.filter((m) => m.data.speciesId === 479);
+    if (rotomMons.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const forms = (await Promise.all(ROTOM_FORMS.map((id) => fetchMon(id, `rotom-${id}`)))).filter((x): x is MonData => !!x);
+      if (cancelled || forms.length === 0) return;
+      const id = setInterval(() => {
+        rotomMons.forEach((m) => {
+          if (m.hp <= 0) return;
+          const cur = forms.findIndex((f) => f.id === m.data.id);
+          const next = forms[(cur + 1) % forms.length];
+          m.data = { ...next, uid: m.data.uid };
+        });
+      }, 3000);
+      (rotomMons[0] as MonState & { __rotomTimer?: number }).__rotomTimer = id as unknown as number;
+    })();
+    return () => {
+      cancelled = true;
+      const id = (rotomMons[0] as MonState & { __rotomTimer?: number }).__rotomTimer;
+      if (id) clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+
   return (
     <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-3 p-3 sm:p-5">
       <header className="flex items-end justify-between gap-3">
@@ -1352,6 +1473,12 @@ function Battle(props: {
           <button onClick={() => setRunning(!running)} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">
             {running ? "⏸ Pause" : "▶ Resume"}
           </button>
+          <button onClick={() => {
+            const el = arenaRef.current;
+            if (!el) return;
+            if (document.fullscreenElement) void document.exitFullscreen();
+            else void el.requestFullscreen?.().catch(() => {});
+          }} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">⛶ Fullscreen</button>
           <button onClick={backToLobby} className="rounded border-2 border-border bg-accent px-3 py-2 text-[8px] text-primary-foreground sm:text-[10px]">
             Back to Lobby
           </button>
@@ -1374,6 +1501,12 @@ function Battle(props: {
                 <div className="h-full transition-[width] duration-200" style={{ width: `${(m.hp / m.maxHp) * 100}%`, background: m.hp > m.maxHp * 0.4 ? "var(--color-hp)" : "var(--color-hp-low)" }} />
               </div>
               <p className="mt-1 text-[6px] text-muted-foreground sm:text-[7px]">A{d.baseAtk} D{d.baseDef} S{d.baseSpd}</p>
+              {!dead && m.evolveEnabled && (d.evolveTo || m.plusLevel === 0) && (() => {
+                const total = (typeof window !== "undefined" ? (window as unknown as { __ppbEvolveMs?: number }).__ppbEvolveMs : 0) || 15000;
+                const remain = Math.max(0, Math.ceil((total - m.evolveTimer) / 1000));
+                const label = d.evolveTo ? (d.evolveTo.isMega ? "Mega" : d.evolveTo.isGmax ? "G-Max" : "Evo") : "Plus";
+                return <p className="text-[6px] sm:text-[7px]" style={{ color: "#ffd83a" }}>{label} in {remain}s</p>;
+              })()}
             </div>
           );
         })}
@@ -1416,7 +1549,7 @@ function Battle(props: {
           {mons.map((m, i) => {
             const d = m.data;
             const fainted = m.hp <= 0;
-            const size = d.isMega ? 78 : d.isGmax ? 92 : 64;
+            const size = d.isGmax ? 100 : d.isMega ? 84 : (m.plusLevel > 0 ? 72 : 64);
             const evolving = m.evolveFlashUntil && now < m.evolveFlashUntil;
             return (
               <div key={d.uid}
