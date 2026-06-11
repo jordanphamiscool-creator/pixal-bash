@@ -319,7 +319,7 @@ async function fetchMon(id: number, uid: string): Promise<MonData | null> {
         isMega: isMegaName(j.name), isGmax: isGmaxName(j.name), isRegional: isRegionalName(j.name),
       };
       POKE_CACHE.set(id, cached);
-      lsSet(`ppb-mon-${id}`, cached);
+      lsSet(`ppb-mon-v2-${id}`, cached);
     } catch { return null; }
   }
   return { ...cached, uid };
