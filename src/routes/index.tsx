@@ -1422,6 +1422,12 @@ function Battle(props: {
           <button onClick={() => setRunning(!running)} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">
             {running ? "⏸ Pause" : "▶ Resume"}
           </button>
+          <button onClick={() => {
+            const el = arenaRef.current;
+            if (!el) return;
+            if (document.fullscreenElement) void document.exitFullscreen();
+            else void el.requestFullscreen?.().catch(() => {});
+          }} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">⛶ Fullscreen</button>
           <button onClick={backToLobby} className="rounded border-2 border-border bg-accent px-3 py-2 text-[8px] text-primary-foreground sm:text-[10px]">
             Back to Lobby
           </button>
