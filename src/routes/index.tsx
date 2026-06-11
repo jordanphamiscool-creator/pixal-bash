@@ -952,18 +952,31 @@ function Lobby(props: {
   const [filterGen, setFilterGen] = useState<"all" | number>("all");
   const [filterRarity, setFilterRarity] = useState<"all" | "legendary" | "mythical" | "ultrabeast" | "normal">("all");
   const [filterForm, setFilterForm] = useState<"all" | "mega" | "gmax" | "regional">("all");
+  const [filterEvos, setFilterEvos] = useState<"all" | "1" | "2" | "3" | "4">("all");
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [typeIndex, setTypeIndex] = useState<Map<number, ElementType>>(new Map());
+  const [typeIdSet, setTypeIdSet] = useState<Set<number> | null>(null);
 
   useEffect(() => { loadCatalog().then(setCatalog).catch(() => {}); }, []);
 
-  // For type/rarity filtering we need to know each entry's type. Use cached mon data only;
-  // no extra fetches. Build incrementally from POKE_CACHE.
+  // Type filter: when user picks a type, fetch the official type endpoint once and cache.
   useEffect(() => {
-    const m = new Map<number, ElementType>();
-    POKE_CACHE.forEach((md, id) => m.set(id, md.type));
-    setTypeIndex(m);
-  }, [catalog]);
+    if (filterType === "all") { setTypeIdSet(null); return; }
+    const cacheKey = `ppb-type-${filterType}`;
+    const cached = lsGet<number[] | null>(cacheKey, null);
+    if (cached) { setTypeIdSet(new Set(cached)); return; }
+    let cancelled = false;
+    fetch(`https://pokeapi.co/api/v2/type/${filterType}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return;
+        const ids = (j.pokemon as { pokemon: { url: string } }[])
+          .map((p) => Number(p.pokemon.url.match(/\/pokemon\/(\d+)\//)?.[1] || 0))
+          .filter((n) => n > 0);
+        lsSet(cacheKey, ids);
+        setTypeIdSet(new Set(ids));
+      }).catch(() => setTypeIdSet(new Set()));
+    return () => { cancelled = true; };
+  }, [filterType]);
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -973,14 +986,17 @@ function Lobby(props: {
       if (filterForm === "regional" && !isRegionalName(c.name)) return false;
       if (filterGen !== "all" && c.id <= 1025 && genOf(c.id) !== filterGen) return false;
       if (filterRarity !== "all" && c.id <= 1025 && rarityOf(c.id) !== filterRarity) return false;
-      if (filterType !== "all") {
-        const t = typeIndex.get(c.id);
-        if (!t || t !== filterType) return false;
+      if (filterType !== "all" && typeIdSet && !typeIdSet.has(c.id)) return false;
+      if (filterEvos !== "all") {
+        // Approx: 4 = has Mega/Gmax/regional in name; otherwise we can't know without an extra fetch.
+        const hasSpecial = isMegaName(c.name) || isGmaxName(c.name) || isRegionalName(c.name);
+        if (filterEvos === "4" && !hasSpecial) return false;
+        if (filterEvos !== "4" && hasSpecial) return false;
       }
       if (!s) return true;
       return c.name.includes(s) || c.display.toLowerCase().includes(s);
-    }).slice(0, 240);
-  }, [catalog, search, filterType, filterGen, filterRarity, filterForm, typeIndex]);
+    }).slice(0, 320);
+  }, [catalog, search, filterType, filterGen, filterRarity, filterForm, filterEvos, typeIdSet]);
 
   const addPick = async (entry: CatalogEntry) => {
     if (picks.length >= 14) return;
