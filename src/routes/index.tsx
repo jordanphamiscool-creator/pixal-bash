@@ -803,7 +803,8 @@ function Game() {
           lastAttack: -rand(0, 1500),
           lastSpecial: -rand(0, SPECIAL_COOLDOWN_BASE),
           evolveTimer: 0, hitFlash: 0, attackFlash: 0, evolveFlashUntil: 0,
-          evolveEnabled: entry.evolve && !!d.evolveTo,
+          evolveEnabled: entry.evolve && (!!d.evolveTo || true), // also enable for plus-evolution
+          plusLevel: 0,
         };
       });
 
