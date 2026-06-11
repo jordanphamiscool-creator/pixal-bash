@@ -264,7 +264,7 @@ function bestSprite(j: { sprites?: { other?: Record<string, { front_default?: st
 async function fetchMon(id: number, uid: string): Promise<MonData | null> {
   let cached = POKE_CACHE.get(id);
   if (!cached) {
-    const stored = lsGet<MonData | null>(`ppb-mon-${id}`, null);
+    const stored = lsGet<MonData | null>(`ppb-mon-v2-${id}`, null);
     if (stored) { POKE_CACHE.set(id, stored); cached = stored; }
   }
   if (!cached) {
