@@ -553,9 +553,11 @@ function Game() {
       setPayout(win);
       pushLog(`🎉 You won ${win} coins on your bet!`, "#ffd83a");
     } else {
-      setCoins((c) => Math.max(0, c - bet.amount));
-      setPayout(-bet.amount);
-      pushLog(`💸 You lost ${bet.amount} coins on your bet.`, "#ff7777");
+      const loss = Math.min(bet.amount, Math.max(0, monsRef.current.length ? 99999 : 0));
+      const newBal = Math.max(MIN_COINS, (lsGet<number>("ppb-coins", STARTING_COINS) as number) - loss);
+      setCoins(newBal);
+      setPayout(-(loss));
+      pushLog(`💸 You lost ${loss} coins on your bet. (floor ${MIN_COINS})`, "#ff7777");
     }
   };
 
