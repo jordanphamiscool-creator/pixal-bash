@@ -1406,6 +1406,34 @@ function Battle(props: {
   };
   const onPointerUp = () => { dragRef.current = null; };
 
+  // Rotom (#479) form rotator — swap form every 3 seconds.
+  useEffect(() => {
+    const ROTOM_FORMS = [479, 10008, 10009, 10010, 10011, 10012];
+    const rotomMons = monsRef.current.filter((m) => m.data.speciesId === 479);
+    if (rotomMons.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const forms = (await Promise.all(ROTOM_FORMS.map((id) => fetchMon(id, `rotom-${id}`)))).filter((x): x is MonData => !!x);
+      if (cancelled || forms.length === 0) return;
+      const id = setInterval(() => {
+        rotomMons.forEach((m) => {
+          if (m.hp <= 0) return;
+          const cur = forms.findIndex((f) => f.id === m.data.id);
+          const next = forms[(cur + 1) % forms.length];
+          m.data = { ...next, uid: m.data.uid };
+        });
+      }, 3000);
+      (rotomMons[0] as MonState & { __rotomTimer?: number }).__rotomTimer = id as unknown as number;
+    })();
+    return () => {
+      cancelled = true;
+      const id = (rotomMons[0] as MonState & { __rotomTimer?: number }).__rotomTimer;
+      if (id) clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+
   return (
     <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-3 p-3 sm:p-5">
       <header className="flex items-end justify-between gap-3">
