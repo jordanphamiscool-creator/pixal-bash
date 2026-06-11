@@ -609,18 +609,36 @@ function Game() {
 
       // Evolution
       m.evolveTimer += dt * 1000;
-      if (m.evolveEnabled && d.evolveTo && m.evolveTimer >= evolveMsRef.current) {
-        const next = d.evolveTo;
-        const oldName = d.name;
-        m.data = { ...next, uid: d.uid };
-        m.evolveTimer = 0;
-        m.evolveFlashUntil = now + EVOLVE_FLASH_MS;
-        const newMax = Math.round(120 + next.baseHp * 1.8);
-        const ratio = m.hp / m.maxHp;
-        m.maxHp = newMax;
-        m.hp = Math.min(newMax, Math.max(40, Math.round(newMax * ratio + 50)));
-        pushLog(`${oldName} evolved into ${next.name}!`, next.color);
-        if (soundRef.current) playSound(next.cry, volume);
+      if (m.evolveEnabled && m.evolveTimer >= evolveMsRef.current) {
+        if (d.evolveTo) {
+          const next = d.evolveTo;
+          const oldName = d.name;
+          m.data = { ...next, uid: d.uid };
+          m.evolveTimer = 0;
+          m.evolveFlashUntil = now + EVOLVE_FLASH_MS;
+          const newMax = Math.round(120 + next.baseHp * 1.8);
+          const ratio = m.hp / m.maxHp;
+          m.maxHp = newMax;
+          m.hp = Math.min(newMax, Math.max(40, Math.round(newMax * ratio + 50)));
+          pushLog(`${oldName} evolved into ${next.name}!`, next.color);
+          if (soundRef.current) playSound(next.cry, volume);
+        } else if (m.plusLevel === 0) {
+          // Plus evolution — no Mega/Gmax/regional available, but still grant a power boost
+          const oldName = d.name;
+          m.data = { ...d, name: d.name.startsWith("✦") ? d.name : `✦${d.name}`,
+            baseAtk: Math.round(d.baseAtk * 1.25), baseDef: Math.round(d.baseDef * 1.15),
+            baseSpd: Math.round(d.baseSpd * 1.1), baseHp: Math.round(d.baseHp * 1.25),
+            signature: { ...d.signature, dmg: Math.round(d.signature.dmg * 1.25) },
+            basic: { ...d.basic, dmg: Math.round(d.basic.dmg * 1.25) } };
+          m.plusLevel = 1;
+          m.evolveTimer = 0;
+          m.evolveFlashUntil = now + EVOLVE_FLASH_MS;
+          const newMax = Math.round(m.maxHp * 1.25);
+          m.maxHp = newMax;
+          m.hp = Math.min(newMax, Math.round(m.hp + newMax * 0.25));
+          pushLog(`${oldName} powered up to ✦Plus form!`, d.color);
+          if (soundRef.current) playSound(d.cry, volume);
+        }
       }
 
       const tgt = nearestEnemy(i);
@@ -634,14 +652,21 @@ function Game() {
       const moveSpeed = 60 + d.baseSpd * 0.35;
       m.vel.x = (dx / dist) * seek + tangent.x * moveSpeed * 0.6 + rand(-10, 10);
       m.vel.y = (dy / dist) * seek + tangent.y * moveSpeed * 0.6 + rand(-10, 10);
-      mons.forEach((o, j) => {
-        if (i === j || o.hp <= 0) return;
+      // separation: only against nearby mons (skip squared scan for far ones)
+      for (let j = 0; j < mons.length; j++) {
+        if (i === j) continue;
+        const o = mons[j];
+        if (o.hp <= 0) continue;
         const ox = m.pos.x - o.pos.x, oy = m.pos.y - o.pos.y;
+        if (Math.abs(ox) > 80 || Math.abs(oy) > 80) continue;
         const od = Math.hypot(ox, oy) || 1;
         if (od < MON_R * 2.4) { m.vel.x += (ox / od) * 80; m.vel.y += (oy / od) * 80; }
-      });
+      }
       m.pos.x = Math.max(MON_R, Math.min(ARENA_W - MON_R, m.pos.x + m.vel.x * dt));
       m.pos.y = Math.max(MON_R, Math.min(ARENA_H - MON_R, m.pos.y + m.vel.y * dt));
+
+      // Form-based damage multipliers
+      const formMul = d.isGmax ? 1.7 : d.isMega ? 1.6 : (m.plusLevel > 0 ? 1.0 : 1.0); // plus already baked into stats
 
       const atkCd = Math.max(700, ABILITY_COOLDOWN_BASE * (80 / Math.max(20, d.baseSpd)));
       if (now - m.lastAttack >= atkCd && dist <= ATTACK_RANGE + 60) {
@@ -649,10 +674,9 @@ function Game() {
         m.attackFlash = now + 300;
         const crit = Math.random() < 0.15;
         const eff = typeMult(d.type, t.data.type);
-        // Flattened stat influence (less determinism, more randomness)
         const atkMul = 0.7 + 0.6 * (d.baseAtk / 100);
         const defReduction = 1 - Math.min(0.55, t.data.baseDef / 360);
-        const dmg = Math.max(1, Math.round(d.basic.dmg * atkMul * (crit ? 1.5 : 1) * eff * defReduction * (0.75 + Math.random() * 0.5)));
+        const dmg = Math.max(1, Math.round(d.basic.dmg * atkMul * formMul * (crit ? 1.5 : 1) * eff * defReduction * (0.75 + Math.random() * 0.5)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
         if (projectilesRef.current.length < 60) {
           projectilesRef.current.push({
@@ -672,7 +696,7 @@ function Game() {
         const eff = typeMult(d.type, t.data.type);
         const atkMul = 0.8 + 0.6 * (d.baseAtk / 100);
         const defReduction = 1 - Math.min(0.5, t.data.baseDef / 380);
-        const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * (crit ? 1.7 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
+        const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * formMul * (crit ? 1.7 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
         if (projectilesRef.current.length < 60) {
           projectilesRef.current.push({
