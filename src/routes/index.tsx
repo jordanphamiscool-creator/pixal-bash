@@ -185,8 +185,10 @@ function readCoins(): number {
 }
 function writeCoins(n: number) {
   if (typeof window === "undefined") return;
-  localStorage.setItem("ppb-coins", String(Math.max(0, Math.round(n))));
+  if (localStorage.getItem("ppb-infinite") === "1") { localStorage.setItem("ppb-coins", "999999"); return; }
+  localStorage.setItem("ppb-coins", String(Math.max(10, Math.round(n))));
 }
+const MIN_COINS = 10;
 
 // ============================================================
 // Signature moves (curated, falls back to generic)
