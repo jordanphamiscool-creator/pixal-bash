@@ -845,6 +845,7 @@ function Game() {
       projectilesRef.current = [];
       popsRef.current = [];
       evolveMsRef.current = evolveSec * 1000;
+      if (typeof window !== "undefined") (window as unknown as { __ppbEvolveMs?: number }).__ppbEvolveMs = evolveSec * 1000;
 
       let resolvedTarget: string | null = null;
       if (betAmount > 0 && betAmount <= coins && betTarget) {
