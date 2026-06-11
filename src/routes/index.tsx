@@ -1279,19 +1279,19 @@ function Shop({ coins, setCoins, shop, setShop, onClose }: {
 }) {
   const buyBg = (id: string, price: number) => {
     if (shop.ownedBgs.includes(id)) { setShop((s) => ({ ...s, selectedBg: id })); return; }
-    if (coins < price) return;
+    if (coins - price < MIN_COINS) return;
     setCoins((c) => c - price);
     setShop((s) => ({ ...s, ownedBgs: [...s.ownedBgs, id], selectedBg: id }));
   };
   const buyFx = (id: string, price: number) => {
     if (shop.ownedFx.includes(id)) { setShop((s) => ({ ...s, selectedFx: id })); return; }
-    if (coins < price) return;
+    if (coins - price < MIN_COINS) return;
     setCoins((c) => c - price);
     setShop((s) => ({ ...s, ownedFx: [...s.ownedFx, id], selectedFx: id }));
   };
   const buyAbility = (kind: "pick" | "evolve") => {
     const price = kind === "pick" ? ABILITY_PICK_PRICE : ABILITY_EVOLVE_PRICE;
-    if (coins < price) return;
+    if (coins - price < MIN_COINS) return;
     setCoins((c) => c - price);
     setShop((s) => kind === "pick" ? { ...s, abilityPickWinner: s.abilityPickWinner + 1 } : { ...s, abilityManualEvolve: s.abilityManualEvolve + 1 });
   };
