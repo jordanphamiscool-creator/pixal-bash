@@ -1004,11 +1004,10 @@ function Lobby(props: {
     const m = await fetchMon(entry.id, `pick-${entry.id}-${Date.now()}`);
     setBusyId(null);
     if (m) {
-      // ensure type index updated
-      setTypeIndex((idx) => { const n = new Map(idx); n.set(entry.id, m.type); return n; });
       setPicks([...picks, { mon: m, team: picks.length % 2, evolve: true }]);
     }
   };
+  const clearAllPicks = () => setPicks([]);
   const removePick = (uid: string) => setPicks(picks.filter((p) => p.mon.uid !== uid));
   const updatePick = (uid: string, patch: Partial<Pick>) =>
     setPicks(picks.map((p) => (p.mon.uid === uid ? { ...p, ...patch } : p)));
