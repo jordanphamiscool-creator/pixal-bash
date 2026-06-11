@@ -1171,9 +1171,17 @@ function Lobby(props: {
                 <option value="gmax">G-Max only</option>
                 <option value="regional">Regional</option>
               </select>
+              <select value={filterEvos} onChange={(e) => setFilterEvos(e.target.value as "all" | "1" | "2" | "3" | "4")}
+                className="rounded border-2 border-border bg-background px-2 py-1 text-[8px] sm:text-[10px]" title="Evolutions">
+                <option value="all">Any evo</option>
+                <option value="1">Base/no special</option>
+                <option value="4">4+ (Mega/Gmax/Regional)</option>
+              </select>
+              {picks.length > 0 && (
+                <button onClick={clearAllPicks} className="rounded border-2 border-border bg-destructive/40 px-2 py-1 text-[8px] sm:text-[10px]">🗑 Clear all</button>
+              )}
             </div>
           </div>
-          {filterType !== "all" && <p className="mb-1 text-[7px] text-muted-foreground sm:text-[9px]">Type filter only shows mons you've loaded. Click any mon once to load its type.</p>}
 
           {picks.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2 rounded border border-border bg-background/40 p-2">
