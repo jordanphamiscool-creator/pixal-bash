@@ -1841,3 +1841,228 @@ function ProjectileFx({ p, now }: { p: Projectile; now: number }) {
     </g>);
   }
 }
+
+// ============================================================
+// Win FX overlay (actually animates now)
+// ============================================================
+function WinFx({ kind, color }: { kind: string; color: string }) {
+  if (kind === "confetti") {
+    const pieces = Array.from({ length: 36 }, (_, i) => i);
+    const colors = ["#ffd83a", "#ff5566", "#4ea8ff", "#62e07a", "#d976ff", "#ffffff"];
+    return (
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        {pieces.map((i) => (
+          <span key={i} className="absolute block"
+            style={{
+              left: `${(i * 97) % 100}%`,
+              top: "-10%",
+              width: 8, height: 14,
+              background: colors[i % colors.length],
+              animation: `winfx-fall ${1.6 + (i % 7) * 0.2}s ${(i % 11) * 0.07}s linear infinite`,
+              transform: `rotate(${(i * 47) % 360}deg)`,
+            }} />
+        ))}
+      </div>
+    );
+  }
+  if (kind === "fireworks") {
+    const bursts = [0, 1, 2, 3, 4];
+    return (
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        {bursts.map((b) => (
+          <div key={b} className="absolute"
+            style={{
+              left: `${15 + b * 18}%`,
+              top: `${20 + (b % 3) * 18}%`,
+              animation: `winfx-burst 1.4s ${b * 0.25}s ease-out infinite`,
+            }}>
+            {Array.from({ length: 12 }, (_, i) => i).map((i) => (
+              <span key={i} className="absolute block h-1.5 w-1.5 rounded-full"
+                style={{
+                  background: color,
+                  transform: `rotate(${(i * 30)}deg) translateX(0)`,
+                  animation: `winfx-spark 1.4s ${b * 0.25}s ease-out infinite`,
+                  ["--ang" as never]: `${i * 30}deg`,
+                }} />
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  // pixelrain
+  const drops = Array.from({ length: 60 }, (_, i) => i);
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      {drops.map((i) => (
+        <span key={i} className="absolute block"
+          style={{
+            left: `${(i * 53) % 100}%`,
+            top: "-5%",
+            width: 4, height: 4,
+            background: color,
+            animation: `winfx-fall ${0.9 + (i % 5) * 0.15}s ${(i % 13) * 0.06}s linear infinite`,
+          }} />
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
+// Catch & Gym mode (lite)
+// ============================================================
+const STARTER_OPTIONS: { id: number; name: string; type: string }[] = [
+  { id: 1, name: "Bulbasaur", type: "grass" },
+  { id: 4, name: "Charmander", type: "fire" },
+  { id: 7, name: "Squirtle", type: "water" },
+  { id: 25, name: "Pikachu", type: "electric" },
+  { id: 133, name: "Eevee", type: "normal" },
+];
+const GYM_LEADERS: { id: string; name: string; type: string; team: number[]; reward: number }[] = [
+  { id: "brock", name: "Brock — Rock", type: "rock", team: [74, 95, 76], reward: 60 },
+  { id: "misty", name: "Misty — Water", type: "water", team: [120, 121, 131], reward: 80 },
+  { id: "surge", name: "Lt. Surge — Electric", type: "electric", team: [100, 25, 26], reward: 100 },
+  { id: "erika", name: "Erika — Grass", type: "grass", team: [71, 114, 45], reward: 120 },
+  { id: "sabrina", name: "Sabrina — Psychic", type: "psychic", team: [64, 122, 65], reward: 160 },
+  { id: "giovanni", name: "Giovanni — Ground", type: "ground", team: [51, 31, 34], reward: 220 },
+];
+
+function CatchGym({ onClose, onChallengeGym }: {
+  onClose: () => void;
+  onChallengeGym: (yourTeam: number[], gymTeam: number[]) => Promise<void>;
+}) {
+  const [starter, setStarter] = useState<number | null>(() => {
+    if (typeof window === "undefined") return null;
+    const v = localStorage.getItem("ppb-starter");
+    return v ? Number(v) : null;
+  });
+  const [caught, setCaught] = useState<number[]>(() => lsGet<number[]>("ppb-team", []));
+  const [beaten, setBeaten] = useState<string[]>(() => lsGet<string[]>("ppb-beaten", []));
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => { if (starter !== null) localStorage.setItem("ppb-starter", String(starter)); }, [starter]);
+  useEffect(() => { lsSet("ppb-team", caught); }, [caught]);
+  useEffect(() => { lsSet("ppb-beaten", beaten); }, [beaten]);
+
+  const team = useMemo(() => {
+    const t: number[] = [];
+    if (starter !== null) t.push(starter);
+    caught.forEach((c) => { if (!t.includes(c) && t.length < 3) t.push(c); });
+    return t;
+  }, [starter, caught]);
+
+  const pickStarter = (id: number) => { setStarter(id); setCaught([]); setBeaten([]); };
+  const wildCatch = async () => {
+    setBusy(true);
+    try {
+      const id = 1 + Math.floor(Math.random() * 151); // gen 1 wild for simplicity
+      const m = await fetchMon(id, `wild-${id}`);
+      if (m) {
+        setCaught((c) => c.length >= 8 ? c : [...c, id]);
+        alert(`A wild ${m.name} appeared! You caught it. (Team box: ${caught.length + 1}/8)`);
+      }
+    } finally { setBusy(false); }
+  };
+  const releaseOne = (id: number) => setCaught((c) => c.filter((x) => x !== id));
+
+  const challenge = async (g: typeof GYM_LEADERS[number]) => {
+    if (team.length === 0) { alert("Pick a starter first!"); return; }
+    setBusy(true);
+    try {
+      // Pad your team to 3 with random caught/starter
+      const my = [...team];
+      while (my.length < 3) my.push(my[0]);
+      await onChallengeGym(my.slice(0, 3), g.team);
+      // Optimistically mark as beaten — user verifies in the brawl. For now mark on challenge.
+      if (!beaten.includes(g.id)) setBeaten((b) => [...b, g.id]);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-3 p-3 sm:p-5">
+      <header className="flex items-end justify-between">
+        <div>
+          <h1 className="text-[10px] tracking-wider text-primary sm:text-sm">CATCH &amp; GYM</h1>
+          <p className="mt-1 text-[7px] text-muted-foreground sm:text-[9px]">
+            Pick a starter, catch wild mons, challenge gym leaders. Battles use the main engine.
+          </p>
+        </div>
+        <button onClick={onClose} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">← Lobby</button>
+      </header>
+
+      <section className="rounded border-2 border-border bg-panel p-3">
+        <p className="mb-2 text-[9px] text-primary sm:text-[11px]">{starter === null ? "PICK YOUR STARTER" : "STARTER"}</p>
+        <div className="flex flex-wrap gap-2">
+          {STARTER_OPTIONS.map((s) => (
+            <button key={s.id} onClick={() => pickStarter(s.id)}
+              className={`flex flex-col items-center rounded border-2 p-2 text-[8px] sm:text-[10px] ${starter === s.id ? "border-primary bg-primary/20" : "border-border bg-muted"}`}>
+              <img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${s.id}.png`}
+                alt={s.name} className="h-12 w-12" style={{ imageRendering: "pixelated" }} />
+              <span>{s.name}</span>
+              <span className="text-muted-foreground">{s.type}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {starter !== null && (
+        <>
+          <section className="rounded border-2 border-border bg-panel p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-[9px] text-primary sm:text-[11px]">WILD GRASS ({caught.length}/8)</p>
+              <button disabled={busy || caught.length >= 8} onClick={wildCatch}
+                className="rounded border-2 border-border bg-accent px-3 py-2 text-[8px] text-primary-foreground disabled:opacity-40 sm:text-[10px]">
+                🌿 Walk &amp; catch
+              </button>
+            </div>
+            {caught.length === 0 ? (
+              <p className="text-[8px] text-muted-foreground sm:text-[10px]">No catches yet. Tap "Walk &amp; catch" to find one.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {caught.map((id) => (
+                  <div key={id} className="flex items-center gap-1 rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">
+                    <img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`}
+                      alt={`#${id}`} className="h-8 w-8" style={{ imageRendering: "pixelated" }} />
+                    <span>#{id}</span>
+                    <button onClick={() => releaseOne(id)} className="ml-1 text-red-400">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="mt-2 text-[7px] text-muted-foreground sm:text-[9px]">
+              Your battle team is your starter + first 2 catches.
+            </p>
+          </section>
+
+          <section className="rounded border-2 border-border bg-panel p-3">
+            <p className="mb-2 text-[9px] text-primary sm:text-[11px]">GYM LEADERS ({beaten.length}/{GYM_LEADERS.length})</p>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {GYM_LEADERS.map((g) => {
+                const done = beaten.includes(g.id);
+                return (
+                  <div key={g.id} className={`rounded border-2 p-2 text-[8px] sm:text-[10px] ${done ? "border-primary bg-primary/10" : "border-border bg-muted"}`}>
+                    <p className="text-primary">{done ? "✓ " : ""}{g.name}</p>
+                    <div className="my-1 flex gap-1">
+                      {g.team.map((id) => (
+                        <img key={id} src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`}
+                          alt={`#${id}`} className="h-9 w-9" style={{ imageRendering: "pixelated" }} />
+                      ))}
+                    </div>
+                    <p className="text-muted-foreground">Reward: {g.reward}c</p>
+                    <button disabled={busy} onClick={() => challenge(g)}
+                      className="mt-1 w-full rounded border-2 border-border bg-accent px-2 py-1 text-[8px] text-primary-foreground disabled:opacity-40 sm:text-[10px]">
+                      ⚔ Challenge
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            {beaten.length === GYM_LEADERS.length && (
+              <p className="mt-2 text-[9px] text-primary">★ You are the Champion! ★</p>
+            )}
+          </section>
+        </>
+      )}
+    </main>
+  );
+}
