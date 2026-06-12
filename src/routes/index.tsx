@@ -1247,6 +1247,48 @@ function Lobby(props: {
         </section>
       )}
 
+
+      {/* Preset battles + Favorites */}
+      <section className="rounded border-2 border-border bg-panel p-3">
+        <p className="mb-2 text-[9px] text-primary sm:text-[11px]">PRESET BATTLES</p>
+        <div className="flex flex-wrap gap-2">
+          {PRESETS.map((p) => (
+            <button key={p.id} disabled={loading}
+              onClick={async () => { await onLoadIds(p.ids); setMode(p.ids.length > 6 ? "ffa" : "ffa"); }}
+              title={p.description}
+              className="rounded border-2 border-border bg-muted px-2 py-1 text-left text-[8px] hover:brightness-125 disabled:opacity-40 sm:text-[10px]">
+              <div className="text-primary">{p.label}</div>
+              <div className="text-[7px] text-muted-foreground">{p.description}</div>
+            </button>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[9px] text-primary sm:text-[11px]">★ FAVORITES ({favs.length}/{MAX_FAVS})</p>
+          {rosterMode === "custom" && picks.length > 0 && favs.length < MAX_FAVS && (
+            <button onClick={() => {
+              const n = prompt("Name this favorite team:", `Team ${favs.length + 1}`);
+              if (n) onSaveFav(n);
+            }} className="rounded border-2 border-border bg-primary px-2 py-1 text-[8px] text-primary-foreground sm:text-[10px]">
+              ★ Save current picks
+            </button>
+          )}
+        </div>
+        {favs.length === 0 ? (
+          <p className="mt-1 text-[7px] text-muted-foreground sm:text-[9px]">Pick your own team then save it to start the same battle in one click.</p>
+        ) : (
+          <div className="mt-1 flex flex-wrap gap-2">
+            {favs.map((f) => (
+              <div key={f.id} className="flex items-center gap-1 rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">
+                <button disabled={loading} onClick={async () => { setMode(f.mode); await onLoadIds(f.ids, f.teams, f.evolves); }}
+                  className="text-primary hover:brightness-125">▶ {f.name}</button>
+                <span className="text-muted-foreground">({f.ids.length})</span>
+                <button onClick={() => setFavs((cur) => cur.filter((x) => x.id !== f.id))} className="ml-1 text-red-400">×</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       {/* Custom picker */}
       {rosterMode === "custom" && (
         <section className="rounded border-2 border-border bg-panel p-3">
