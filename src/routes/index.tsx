@@ -812,6 +812,43 @@ function Game() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen, rosterMode, battleSize]);
 
+  // Load picks from a list of IDs (favorites/presets). Optionally split into teams.
+  const loadPicksFromIds = useCallback(async (ids: number[], teams?: number[], evolves?: boolean[]) => {
+    setLoading(true);
+    try {
+      const mons = await Promise.all(ids.map((id, i) => fetchMon(id, `pick-${id}-${Date.now()}-${i}`)));
+      const newPicks: Pick[] = [];
+      mons.forEach((m, i) => {
+        if (!m) return;
+        newPicks.push({ mon: m, team: teams?.[i] ?? (i % 2), evolve: evolves?.[i] ?? true });
+      });
+      setPicks(newPicks);
+      setRosterMode("custom");
+    } finally { setLoading(false); }
+  }, []);
+
+  // Save current picks as a named favorite (max 5).
+  const saveFavorite = useCallback((name: string) => {
+    if (!name.trim() || picks.length === 0) return;
+    const fav: Favorite = {
+      id: `f-${Date.now()}`, name: name.trim().slice(0, 24),
+      ids: picks.map((p) => p.mon.id),
+      teams: picks.map((p) => p.team),
+      evolves: picks.map((p) => p.evolve),
+      mode,
+    };
+    setFavs((cur) => [fav, ...cur].slice(0, MAX_FAVS));
+  }, [picks, mode]);
+
+  // Queue an auto-start once picks state has propagated.
+  useEffect(() => {
+    if (pendingStartRef.current && screen === "lobby" && picks.length >= 2 && !loading) {
+      pendingStartRef.current = false;
+      void startBattle();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picks, loading, screen]);
+
   // ============ Start battle ============
   const startBattle = async () => {
     setLoading(true);
