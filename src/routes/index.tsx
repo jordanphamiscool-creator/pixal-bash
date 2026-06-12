@@ -976,7 +976,7 @@ function Game() {
   if (screen === "catch") {
     return <CatchGym
       onClose={() => setScreen("lobby")}
-      onChallengeGym={async (yourTeam, gymTeam) => {
+      onChallengeGym={async (yourTeam: number[], gymTeam: number[]) => {
         setMode("teams");
         setRosterMode("custom");
         await loadPicksFromIds(
