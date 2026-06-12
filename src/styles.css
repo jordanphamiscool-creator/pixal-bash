@@ -156,3 +156,20 @@
 }
 .anim-evolve-spin { animation: evolve-spin 0.25s ease-in-out infinite; }
 
+
+@keyframes winfx-fall {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(110vh) rotate(720deg); opacity: 0.6; }
+}
+@keyframes winfx-burst {
+  0%, 100% { opacity: 0; }
+  20%, 80% { opacity: 1; }
+}
+@keyframes winfx-spark {
+  0% { transform: rotate(var(--ang)) translateX(0); opacity: 1; }
+  100% { transform: rotate(var(--ang)) translateX(80px); opacity: 0; }
+}
+
+/* Perf hint for the arena */
+.arena-wrap, .arena-wrap * { contain: layout style; }
+.arena-wrap img { will-change: transform; }
