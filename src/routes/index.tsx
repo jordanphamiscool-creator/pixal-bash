@@ -515,10 +515,13 @@ function Game() {
   const [loading, setLoading] = useState(false);
   const [evolveSec, setEvolveSec] = useState(15);
   const [shop, setShop] = useState<ShopState>(DEFAULT_SHOP);
+  const [favs, setFavs] = useState<Favorite[]>([]);
+  const pendingStartRef = useRef(false);
 
-  useEffect(() => { setCoins(readCoins()); setShop(readShop()); }, []);
+  useEffect(() => { setCoins(readCoins()); setShop(readShop()); setFavs(readFavs()); }, []);
   useEffect(() => { writeCoins(coins); }, [coins]);
   useEffect(() => { writeShop(shop); }, [shop]);
+  useEffect(() => { writeFavs(favs); }, [favs]);
 
   // Battle state
   const monsRef = useRef<MonState[]>([]);
