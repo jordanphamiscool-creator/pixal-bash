@@ -481,6 +481,23 @@ function readShop(): ShopState { return { ...DEFAULT_SHOP, ...lsGet<Partial<Shop
 function writeShop(s: ShopState) { lsSet("ppb-shop-v1", s); }
 
 // ============================================================
+// Favorites + Presets
+// ============================================================
+type Favorite = { id: string; name: string; ids: number[]; teams: number[]; evolves: boolean[]; mode: Mode };
+const MAX_FAVS = 5;
+function readFavs(): Favorite[] { return lsGet<Favorite[]>("ppb-favs-v1", []); }
+function writeFavs(f: Favorite[]) { lsSet("ppb-favs-v1", f); }
+
+// Built-in preset battles (just lists of species IDs to load into picks).
+const PRESETS: { id: string; label: string; ids: number[]; description: string }[] = [
+  { id: "gen1-starters", label: "Gen 1 Starters", description: "Bulbasaur · Charmander · Squirtle", ids: [1, 4, 7] },
+  { id: "all-starters", label: "All Starters", description: "Every starter, all gens (18-way)", ids: [1,4,7,152,155,158,252,255,258,387,390,393,495,498,501,650,653,656,722,725,728,810,813,816,906,909,912] },
+  { id: "gen1-first", label: "Gen 1 First-Stages", description: "Charmander, Squirtle, Bulbasaur, Ekans, Sandshrew, Rattata, Nidoran♂, Pikachu, Zubat, Oddish — they all evolve!", ids: [4,7,1,23,27,19,32,25,41,43] },
+  { id: "gen1-legends", label: "Gen 1 Legends", description: "The original birds + Mewtwo + Mew", ids: [144,145,146,150,151] },
+  { id: "eeveelutions", label: "Eeveelutions", description: "All 8 eeveelutions battle", ids: [134,135,136,196,197,470,471,700] },
+];
+
+// ============================================================
 // Component
 // ============================================================
 function Game() {
