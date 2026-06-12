@@ -1485,6 +1485,13 @@ function Battle(props: {
   const now = performance.now();
   const arenaRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ idx: number; offX: number; offY: number } | null>(null);
+  const [isFs, setIsFs] = useState(false);
+  useEffect(() => {
+    const on = () => setIsFs(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", on);
+    return () => document.removeEventListener("fullscreenchange", on);
+  }, []);
+  const sizeMul = isFs ? 1.6 : 1;
 
   const bgCls = (BACKGROUNDS.find((b) => b.id === shop.selectedBg)?.cls) || "arena-grass";
 
@@ -1635,7 +1642,7 @@ function Battle(props: {
           {mons.map((m, i) => {
             const d = m.data;
             const fainted = m.hp <= 0;
-            const size = d.isGmax ? 100 : d.isMega ? 84 : (m.plusLevel > 0 ? 72 : 64);
+            const size = (d.isGmax ? 100 : d.isMega ? 84 : (m.plusLevel > 0 ? 72 : 64)) * sizeMul;
             const evolving = m.evolveFlashUntil && now < m.evolveFlashUntil;
             return (
               <div key={d.uid}
