@@ -1692,11 +1692,12 @@ function Battle(props: {
 
         {status === "ended" && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70">
-            <div className="rounded border-2 border-border bg-panel px-5 py-4 text-center">
+            <WinFx kind={shop.selectedFx} color={winnerTeam !== null ? TEAM_COLORS[winnerTeam] : (winnerIdx !== null ? mons[winnerIdx].data.color : "#ffd83a")} />
+            <div className="relative z-20 rounded border-2 border-border bg-panel px-5 py-4 text-center">
               {winnerTeam !== null ? (
                 <>
                   <p className="text-[10px] sm:text-sm" style={{ color: TEAM_COLORS[winnerTeam] }}>{TEAM_NAMES[winnerTeam]} WINS!</p>
-                  <div className="my-2 flex justify-center gap-2">
+                  <div className="my-2 flex flex-wrap justify-center gap-2">
                     {mons.map((m) => m.team === winnerTeam && m.hp > 0 ? (
                       <img key={m.data.uid} src={m.data.sprite} alt={m.data.name} className="h-16 w-16"
                         style={{ imageRendering: "pixelated", filter: `drop-shadow(0 0 10px ${TEAM_COLORS[winnerTeam]})` }} />
@@ -1715,7 +1716,6 @@ function Battle(props: {
                   {payout > 0 ? `+${payout}` : payout} coins (balance: {coins})
                 </p>
               )}
-              <p className="mt-1 text-[7px] text-muted-foreground">FX: {shop.selectedFx}</p>
               <button onClick={backToLobby} className="mt-2 rounded border-2 border-border bg-primary px-3 py-2 text-[9px] text-primary-foreground hover:brightness-110 sm:text-[10px]">
                 Back to Lobby
               </button>
