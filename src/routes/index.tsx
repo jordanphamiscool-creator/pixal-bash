@@ -973,6 +973,25 @@ function Game() {
     return <Shop coins={coins} setCoins={setCoins} shop={shop} setShop={setShop} onClose={() => setScreen("lobby")} />;
   }
 
+  if (screen === "catch") {
+    return <CatchGym
+      onClose={() => setScreen("lobby")}
+      onChallengeGym={async (yourTeam, gymTeam) => {
+        setMode("teams");
+        setRosterMode("custom");
+        await loadPicksFromIds(
+          [...yourTeam, ...gymTeam],
+          [...yourTeam.map(() => 0), ...gymTeam.map(() => 1)],
+          [...yourTeam.map(() => true), ...gymTeam.map(() => true)],
+        );
+        setBetTarget(null);
+        setBetAmount(0);
+        pendingStartRef.current = true;
+        setScreen("lobby");
+      }}
+    />;
+  }
+
   if (screen === "lobby") {
     return (
       <Lobby
@@ -986,8 +1005,11 @@ function Game() {
         coins={coins} soundOn={soundOn} setSoundOn={setSoundOn}
         evolveSec={evolveSec} setEvolveSec={setEvolveSec}
         shop={shop}
+        favs={favs} setFavs={setFavs}
+        onLoadIds={loadPicksFromIds} onSaveFav={saveFavorite}
         onStart={startBattle} loading={loading}
         openShop={() => setScreen("shop")}
+        openCatch={() => setScreen("catch")}
       />
     );
   }
