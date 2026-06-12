@@ -17,7 +17,7 @@ export const Route = createFileRoute("/")({
 type ElementType = "normal" | "fire" | "water" | "grass" | "electric" | "psychic" | "rock" | "ground" | "flying" | "ice" | "ghost" | "dragon" | "dark" | "steel" | "fighting" | "bug" | "fairy" | "poison";
 type AttackKind = "fireball" | "waterjet" | "leaf" | "lightning" | "psybeam" | "rock" | "iceshard" | "shadowball" | "dragonpulse" | "punch" | "bugbuzz" | "fairywind";
 type Mode = "ffa" | "teams";
-type Screen = "lobby" | "battle" | "shop";
+type Screen = "lobby" | "battle" | "shop" | "catch";
 
 type MonData = {
   uid: string;
@@ -481,6 +481,23 @@ function readShop(): ShopState { return { ...DEFAULT_SHOP, ...lsGet<Partial<Shop
 function writeShop(s: ShopState) { lsSet("ppb-shop-v1", s); }
 
 // ============================================================
+// Favorites + Presets
+// ============================================================
+type Favorite = { id: string; name: string; ids: number[]; teams: number[]; evolves: boolean[]; mode: Mode };
+const MAX_FAVS = 5;
+function readFavs(): Favorite[] { return lsGet<Favorite[]>("ppb-favs-v1", []); }
+function writeFavs(f: Favorite[]) { lsSet("ppb-favs-v1", f); }
+
+// Built-in preset battles (just lists of species IDs to load into picks).
+const PRESETS: { id: string; label: string; ids: number[]; description: string }[] = [
+  { id: "gen1-starters", label: "Gen 1 Starters", description: "Bulbasaur · Charmander · Squirtle", ids: [1, 4, 7] },
+  { id: "all-starters", label: "All Starters", description: "Every starter, all gens (18-way)", ids: [1,4,7,152,155,158,252,255,258,387,390,393,495,498,501,650,653,656,722,725,728,810,813,816,906,909,912] },
+  { id: "gen1-first", label: "Gen 1 First-Stages", description: "Charmander, Squirtle, Bulbasaur, Ekans, Sandshrew, Rattata, Nidoran♂, Pikachu, Zubat, Oddish — they all evolve!", ids: [4,7,1,23,27,19,32,25,41,43] },
+  { id: "gen1-legends", label: "Gen 1 Legends", description: "The original birds + Mewtwo + Mew", ids: [144,145,146,150,151] },
+  { id: "eeveelutions", label: "Eeveelutions", description: "All 8 eeveelutions battle", ids: [134,135,136,196,197,470,471,700] },
+];
+
+// ============================================================
 // Component
 // ============================================================
 function Game() {
@@ -498,10 +515,13 @@ function Game() {
   const [loading, setLoading] = useState(false);
   const [evolveSec, setEvolveSec] = useState(15);
   const [shop, setShop] = useState<ShopState>(DEFAULT_SHOP);
+  const [favs, setFavs] = useState<Favorite[]>([]);
+  const pendingStartRef = useRef(false);
 
-  useEffect(() => { setCoins(readCoins()); setShop(readShop()); }, []);
+  useEffect(() => { setCoins(readCoins()); setShop(readShop()); setFavs(readFavs()); }, []);
   useEffect(() => { writeCoins(coins); }, [coins]);
   useEffect(() => { writeShop(shop); }, [shop]);
+  useEffect(() => { writeFavs(favs); }, [favs]);
 
   // Battle state
   const monsRef = useRef<MonState[]>([]);
@@ -541,8 +561,9 @@ function Game() {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       if (runningRef.current && status === "fighting") step(dt, now);
-      // Throttle React renders to ~16fps so HP bars/log update without thrashing
-      if (now - lastRenderRef.current > 62) {
+      // Throttle React renders to ~11fps so HP bars/log update without thrashing.
+      // Lower than this triggers a TON of re-rendering with 18 mons.
+      if (now - lastRenderRef.current > 90) {
         lastRenderRef.current = now;
         force((n) => (n + 1) % 1_000_000);
       }
@@ -705,7 +726,7 @@ function Game() {
         const defReduction = 1 - Math.min(0.55, t.data.baseDef / 360);
         const dmg = Math.max(1, Math.round(d.basic.dmg * atkMul * formMul * (crit ? 1.5 : 1) * eff * defReduction * (0.75 + Math.random() * 0.5)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
-        if (projectilesRef.current.length < 60) {
+        if (projectilesRef.current.length < 40) {
           projectilesRef.current.push({
             id: idRef.current++, fromIdx: i, targetIdx: tgt,
             from: { ...m.pos }, pos: { ...m.pos }, angle: ang,
@@ -725,7 +746,7 @@ function Game() {
         const defReduction = 1 - Math.min(0.5, t.data.baseDef / 380);
         const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * formMul * (crit ? 1.7 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
-        if (projectilesRef.current.length < 60) {
+        if (projectilesRef.current.length < 40) {
           projectilesRef.current.push({
             id: idRef.current++, fromIdx: i, targetIdx: tgt,
             from: { ...m.pos }, pos: { ...m.pos }, angle: ang,
@@ -790,6 +811,43 @@ function Game() {
     if (screen === "lobby" && rosterMode === "random") void rollRandomRoster();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen, rosterMode, battleSize]);
+
+  // Load picks from a list of IDs (favorites/presets). Optionally split into teams.
+  const loadPicksFromIds = useCallback(async (ids: number[], teams?: number[], evolves?: boolean[]) => {
+    setLoading(true);
+    try {
+      const mons = await Promise.all(ids.map((id, i) => fetchMon(id, `pick-${id}-${Date.now()}-${i}`)));
+      const newPicks: Pick[] = [];
+      mons.forEach((m, i) => {
+        if (!m) return;
+        newPicks.push({ mon: m, team: teams?.[i] ?? (i % 2), evolve: evolves?.[i] ?? true });
+      });
+      setPicks(newPicks);
+      setRosterMode("custom");
+    } finally { setLoading(false); }
+  }, []);
+
+  // Save current picks as a named favorite (max 5).
+  const saveFavorite = useCallback((name: string) => {
+    if (!name.trim() || picks.length === 0) return;
+    const fav: Favorite = {
+      id: `f-${Date.now()}`, name: name.trim().slice(0, 24),
+      ids: picks.map((p) => p.mon.id),
+      teams: picks.map((p) => p.team),
+      evolves: picks.map((p) => p.evolve),
+      mode,
+    };
+    setFavs((cur) => [fav, ...cur].slice(0, MAX_FAVS));
+  }, [picks, mode]);
+
+  // Queue an auto-start once picks state has propagated.
+  useEffect(() => {
+    if (pendingStartRef.current && screen === "lobby" && picks.length >= 2 && !loading) {
+      pendingStartRef.current = false;
+      void startBattle();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picks, loading, screen]);
 
   // ============ Start battle ============
   const startBattle = async () => {
@@ -915,6 +973,25 @@ function Game() {
     return <Shop coins={coins} setCoins={setCoins} shop={shop} setShop={setShop} onClose={() => setScreen("lobby")} />;
   }
 
+  if (screen === "catch") {
+    return <CatchGym
+      onClose={() => setScreen("lobby")}
+      onChallengeGym={async (yourTeam: number[], gymTeam: number[]) => {
+        setMode("teams");
+        setRosterMode("custom");
+        await loadPicksFromIds(
+          [...yourTeam, ...gymTeam],
+          [...yourTeam.map(() => 0), ...gymTeam.map(() => 1)],
+          [...yourTeam.map(() => true), ...gymTeam.map(() => true)],
+        );
+        setBetTarget(null);
+        setBetAmount(0);
+        pendingStartRef.current = true;
+        setScreen("lobby");
+      }}
+    />;
+  }
+
   if (screen === "lobby") {
     return (
       <Lobby
@@ -928,8 +1005,11 @@ function Game() {
         coins={coins} soundOn={soundOn} setSoundOn={setSoundOn}
         evolveSec={evolveSec} setEvolveSec={setEvolveSec}
         shop={shop}
+        favs={favs} setFavs={setFavs}
+        onLoadIds={loadPicksFromIds} onSaveFav={saveFavorite}
         onStart={startBattle} loading={loading}
         openShop={() => setScreen("shop")}
+        openCatch={() => setScreen("catch")}
       />
     );
   }
@@ -961,13 +1041,19 @@ function Lobby(props: {
   coins: number; soundOn: boolean; setSoundOn: (s: boolean) => void;
   evolveSec: number; setEvolveSec: (n: number) => void;
   shop: ShopState;
+  favs: Favorite[]; setFavs: React.Dispatch<React.SetStateAction<Favorite[]>>;
+  onLoadIds: (ids: number[], teams?: number[], evolves?: boolean[]) => Promise<void>;
+  onSaveFav: (name: string) => void;
   onStart: () => void; loading: boolean;
   openShop: () => void;
+  openCatch: () => void;
 }) {
   const { mode, setMode, battleSize, setBattleSize, rosterMode, setRosterMode,
     picks, setPicks, randomRoster, reroll,
     betAmount, setBetAmount, betTarget, setBetTarget,
-    coins, soundOn, setSoundOn, evolveSec, setEvolveSec, shop, onStart, loading, openShop } = props;
+    coins, soundOn, setSoundOn, evolveSec, setEvolveSec, shop,
+    favs, setFavs, onLoadIds, onSaveFav,
+    onStart, loading, openShop, openCatch } = props;
 
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [search, setSearch] = useState("");
@@ -1022,7 +1108,7 @@ function Lobby(props: {
   }, [catalog, search, filterType, filterGen, filterRarity, filterForm, filterEvos, typeIdSet]);
 
   const addPick = async (entry: CatalogEntry) => {
-    if (picks.length >= 14) return;
+    if (picks.length >= 18) return;
     setBusyId(entry.id);
     const m = await fetchMon(entry.id, `pick-${entry.id}-${Date.now()}`);
     setBusyId(null);
@@ -1059,8 +1145,8 @@ function Lobby(props: {
           }} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">
             {typeof window !== "undefined" && localStorage.getItem("ppb-infinite") === "1" ? "♾ ON" : "♾ Coins"}
           </button>
-          <button onClick={() => alert("Catch & Gym mode is in early scaffold — coming next update! Pick starters, walk in grass, catch wild Pokémon, then challenge Rock/Water/Electric/Grass gym leaders.")}
-            className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">🎒 Catch & Gym</button>
+          <button onClick={openCatch}
+            className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">🎒 Catch &amp; Gym</button>
           <button onClick={() => setSoundOn(!soundOn)} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">
             {soundOn ? "🔊 Sound" : "🔇 Muted"}
           </button>
@@ -1081,7 +1167,7 @@ function Lobby(props: {
             </div>
             <div>
               <p className="mb-1 text-muted-foreground">Pokémon per battle: <span className="text-primary">{battleSize}</span></p>
-              <input type="range" min={2} max={14} value={battleSize} onChange={(e) => setBattleSize(Number(e.target.value))} className="w-full" />
+              <input type="range" min={2} max={18} value={battleSize} onChange={(e) => setBattleSize(Number(e.target.value))} className="w-full" />
             </div>
             <div>
               <p className="mb-1 text-muted-foreground">Evolution timer: <span className="text-primary">{evolveSec}s</span></p>
@@ -1160,6 +1246,48 @@ function Lobby(props: {
           </div>
         </section>
       )}
+
+
+      {/* Preset battles + Favorites */}
+      <section className="rounded border-2 border-border bg-panel p-3">
+        <p className="mb-2 text-[9px] text-primary sm:text-[11px]">PRESET BATTLES</p>
+        <div className="flex flex-wrap gap-2">
+          {PRESETS.map((p) => (
+            <button key={p.id} disabled={loading}
+              onClick={async () => { await onLoadIds(p.ids); setMode(p.ids.length > 6 ? "ffa" : "ffa"); }}
+              title={p.description}
+              className="rounded border-2 border-border bg-muted px-2 py-1 text-left text-[8px] hover:brightness-125 disabled:opacity-40 sm:text-[10px]">
+              <div className="text-primary">{p.label}</div>
+              <div className="text-[7px] text-muted-foreground">{p.description}</div>
+            </button>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[9px] text-primary sm:text-[11px]">★ FAVORITES ({favs.length}/{MAX_FAVS})</p>
+          {rosterMode === "custom" && picks.length > 0 && favs.length < MAX_FAVS && (
+            <button onClick={() => {
+              const n = prompt("Name this favorite team:", `Team ${favs.length + 1}`);
+              if (n) onSaveFav(n);
+            }} className="rounded border-2 border-border bg-primary px-2 py-1 text-[8px] text-primary-foreground sm:text-[10px]">
+              ★ Save current picks
+            </button>
+          )}
+        </div>
+        {favs.length === 0 ? (
+          <p className="mt-1 text-[7px] text-muted-foreground sm:text-[9px]">Pick your own team then save it to start the same battle in one click.</p>
+        ) : (
+          <div className="mt-1 flex flex-wrap gap-2">
+            {favs.map((f) => (
+              <div key={f.id} className="flex items-center gap-1 rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">
+                <button disabled={loading} onClick={async () => { setMode(f.mode); await onLoadIds(f.ids, f.teams, f.evolves); }}
+                  className="text-primary hover:brightness-125">▶ {f.name}</button>
+                <span className="text-muted-foreground">({f.ids.length})</span>
+                <button onClick={() => setFavs((cur) => cur.filter((x) => x.id !== f.id))} className="ml-1 text-red-400">×</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Custom picker */}
       {rosterMode === "custom" && (
@@ -1399,6 +1527,13 @@ function Battle(props: {
   const now = performance.now();
   const arenaRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ idx: number; offX: number; offY: number } | null>(null);
+  const [isFs, setIsFs] = useState(false);
+  useEffect(() => {
+    const on = () => setIsFs(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", on);
+    return () => document.removeEventListener("fullscreenchange", on);
+  }, []);
+  const sizeMul = isFs ? 1.6 : 1;
 
   const bgCls = (BACKGROUNDS.find((b) => b.id === shop.selectedBg)?.cls) || "arena-grass";
 
@@ -1549,7 +1684,7 @@ function Battle(props: {
           {mons.map((m, i) => {
             const d = m.data;
             const fainted = m.hp <= 0;
-            const size = d.isGmax ? 100 : d.isMega ? 84 : (m.plusLevel > 0 ? 72 : 64);
+            const size = (d.isGmax ? 100 : d.isMega ? 84 : (m.plusLevel > 0 ? 72 : 64)) * sizeMul;
             const evolving = m.evolveFlashUntil && now < m.evolveFlashUntil;
             return (
               <div key={d.uid}
@@ -1606,11 +1741,12 @@ function Battle(props: {
 
         {status === "ended" && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70">
-            <div className="rounded border-2 border-border bg-panel px-5 py-4 text-center">
+            <WinFx kind={shop.selectedFx} color={winnerTeam !== null ? TEAM_COLORS[winnerTeam] : (winnerIdx !== null ? mons[winnerIdx].data.color : "#ffd83a")} />
+            <div className="relative z-20 rounded border-2 border-border bg-panel px-5 py-4 text-center">
               {winnerTeam !== null ? (
                 <>
                   <p className="text-[10px] sm:text-sm" style={{ color: TEAM_COLORS[winnerTeam] }}>{TEAM_NAMES[winnerTeam]} WINS!</p>
-                  <div className="my-2 flex justify-center gap-2">
+                  <div className="my-2 flex flex-wrap justify-center gap-2">
                     {mons.map((m) => m.team === winnerTeam && m.hp > 0 ? (
                       <img key={m.data.uid} src={m.data.sprite} alt={m.data.name} className="h-16 w-16"
                         style={{ imageRendering: "pixelated", filter: `drop-shadow(0 0 10px ${TEAM_COLORS[winnerTeam]})` }} />
@@ -1629,7 +1765,6 @@ function Battle(props: {
                   {payout > 0 ? `+${payout}` : payout} coins (balance: {coins})
                 </p>
               )}
-              <p className="mt-1 text-[7px] text-muted-foreground">FX: {shop.selectedFx}</p>
               <button onClick={backToLobby} className="mt-2 rounded border-2 border-border bg-primary px-3 py-2 text-[9px] text-primary-foreground hover:brightness-110 sm:text-[10px]">
                 Back to Lobby
               </button>
@@ -1705,4 +1840,229 @@ function ProjectileFx({ p, now }: { p: Projectile; now: number }) {
       <circle r={3} fill="#fff" />
     </g>);
   }
+}
+
+// ============================================================
+// Win FX overlay (actually animates now)
+// ============================================================
+function WinFx({ kind, color }: { kind: string; color: string }) {
+  if (kind === "confetti") {
+    const pieces = Array.from({ length: 36 }, (_, i) => i);
+    const colors = ["#ffd83a", "#ff5566", "#4ea8ff", "#62e07a", "#d976ff", "#ffffff"];
+    return (
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        {pieces.map((i) => (
+          <span key={i} className="absolute block"
+            style={{
+              left: `${(i * 97) % 100}%`,
+              top: "-10%",
+              width: 8, height: 14,
+              background: colors[i % colors.length],
+              animation: `winfx-fall ${1.6 + (i % 7) * 0.2}s ${(i % 11) * 0.07}s linear infinite`,
+              transform: `rotate(${(i * 47) % 360}deg)`,
+            }} />
+        ))}
+      </div>
+    );
+  }
+  if (kind === "fireworks") {
+    const bursts = [0, 1, 2, 3, 4];
+    return (
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        {bursts.map((b) => (
+          <div key={b} className="absolute"
+            style={{
+              left: `${15 + b * 18}%`,
+              top: `${20 + (b % 3) * 18}%`,
+              animation: `winfx-burst 1.4s ${b * 0.25}s ease-out infinite`,
+            }}>
+            {Array.from({ length: 12 }, (_, i) => i).map((i) => (
+              <span key={i} className="absolute block h-1.5 w-1.5 rounded-full"
+                style={{
+                  background: color,
+                  transform: `rotate(${(i * 30)}deg) translateX(0)`,
+                  animation: `winfx-spark 1.4s ${b * 0.25}s ease-out infinite`,
+                  ["--ang" as never]: `${i * 30}deg`,
+                }} />
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  // pixelrain
+  const drops = Array.from({ length: 60 }, (_, i) => i);
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      {drops.map((i) => (
+        <span key={i} className="absolute block"
+          style={{
+            left: `${(i * 53) % 100}%`,
+            top: "-5%",
+            width: 4, height: 4,
+            background: color,
+            animation: `winfx-fall ${0.9 + (i % 5) * 0.15}s ${(i % 13) * 0.06}s linear infinite`,
+          }} />
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
+// Catch & Gym mode (lite)
+// ============================================================
+const STARTER_OPTIONS: { id: number; name: string; type: string }[] = [
+  { id: 1, name: "Bulbasaur", type: "grass" },
+  { id: 4, name: "Charmander", type: "fire" },
+  { id: 7, name: "Squirtle", type: "water" },
+  { id: 25, name: "Pikachu", type: "electric" },
+  { id: 133, name: "Eevee", type: "normal" },
+];
+const GYM_LEADERS: { id: string; name: string; type: string; team: number[]; reward: number }[] = [
+  { id: "brock", name: "Brock — Rock", type: "rock", team: [74, 95, 76], reward: 60 },
+  { id: "misty", name: "Misty — Water", type: "water", team: [120, 121, 131], reward: 80 },
+  { id: "surge", name: "Lt. Surge — Electric", type: "electric", team: [100, 25, 26], reward: 100 },
+  { id: "erika", name: "Erika — Grass", type: "grass", team: [71, 114, 45], reward: 120 },
+  { id: "sabrina", name: "Sabrina — Psychic", type: "psychic", team: [64, 122, 65], reward: 160 },
+  { id: "giovanni", name: "Giovanni — Ground", type: "ground", team: [51, 31, 34], reward: 220 },
+];
+
+function CatchGym({ onClose, onChallengeGym }: {
+  onClose: () => void;
+  onChallengeGym: (yourTeam: number[], gymTeam: number[]) => Promise<void>;
+}) {
+  const [starter, setStarter] = useState<number | null>(() => {
+    if (typeof window === "undefined") return null;
+    const v = localStorage.getItem("ppb-starter");
+    return v ? Number(v) : null;
+  });
+  const [caught, setCaught] = useState<number[]>(() => lsGet<number[]>("ppb-team", []));
+  const [beaten, setBeaten] = useState<string[]>(() => lsGet<string[]>("ppb-beaten", []));
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => { if (starter !== null) localStorage.setItem("ppb-starter", String(starter)); }, [starter]);
+  useEffect(() => { lsSet("ppb-team", caught); }, [caught]);
+  useEffect(() => { lsSet("ppb-beaten", beaten); }, [beaten]);
+
+  const team = useMemo(() => {
+    const t: number[] = [];
+    if (starter !== null) t.push(starter);
+    caught.forEach((c) => { if (!t.includes(c) && t.length < 3) t.push(c); });
+    return t;
+  }, [starter, caught]);
+
+  const pickStarter = (id: number) => { setStarter(id); setCaught([]); setBeaten([]); };
+  const wildCatch = async () => {
+    setBusy(true);
+    try {
+      const id = 1 + Math.floor(Math.random() * 151); // gen 1 wild for simplicity
+      const m = await fetchMon(id, `wild-${id}`);
+      if (m) {
+        setCaught((c) => c.length >= 8 ? c : [...c, id]);
+        alert(`A wild ${m.name} appeared! You caught it. (Team box: ${caught.length + 1}/8)`);
+      }
+    } finally { setBusy(false); }
+  };
+  const releaseOne = (id: number) => setCaught((c) => c.filter((x) => x !== id));
+
+  const challenge = async (g: typeof GYM_LEADERS[number]) => {
+    if (team.length === 0) { alert("Pick a starter first!"); return; }
+    setBusy(true);
+    try {
+      // Pad your team to 3 with random caught/starter
+      const my = [...team];
+      while (my.length < 3) my.push(my[0]);
+      await onChallengeGym(my.slice(0, 3), g.team);
+      // Optimistically mark as beaten — user verifies in the brawl. For now mark on challenge.
+      if (!beaten.includes(g.id)) setBeaten((b) => [...b, g.id]);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-3 p-3 sm:p-5">
+      <header className="flex items-end justify-between">
+        <div>
+          <h1 className="text-[10px] tracking-wider text-primary sm:text-sm">CATCH &amp; GYM</h1>
+          <p className="mt-1 text-[7px] text-muted-foreground sm:text-[9px]">
+            Pick a starter, catch wild mons, challenge gym leaders. Battles use the main engine.
+          </p>
+        </div>
+        <button onClick={onClose} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">← Lobby</button>
+      </header>
+
+      <section className="rounded border-2 border-border bg-panel p-3">
+        <p className="mb-2 text-[9px] text-primary sm:text-[11px]">{starter === null ? "PICK YOUR STARTER" : "STARTER"}</p>
+        <div className="flex flex-wrap gap-2">
+          {STARTER_OPTIONS.map((s) => (
+            <button key={s.id} onClick={() => pickStarter(s.id)}
+              className={`flex flex-col items-center rounded border-2 p-2 text-[8px] sm:text-[10px] ${starter === s.id ? "border-primary bg-primary/20" : "border-border bg-muted"}`}>
+              <img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${s.id}.png`}
+                alt={s.name} className="h-12 w-12" style={{ imageRendering: "pixelated" }} />
+              <span>{s.name}</span>
+              <span className="text-muted-foreground">{s.type}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {starter !== null && (
+        <>
+          <section className="rounded border-2 border-border bg-panel p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-[9px] text-primary sm:text-[11px]">WILD GRASS ({caught.length}/8)</p>
+              <button disabled={busy || caught.length >= 8} onClick={wildCatch}
+                className="rounded border-2 border-border bg-accent px-3 py-2 text-[8px] text-primary-foreground disabled:opacity-40 sm:text-[10px]">
+                🌿 Walk &amp; catch
+              </button>
+            </div>
+            {caught.length === 0 ? (
+              <p className="text-[8px] text-muted-foreground sm:text-[10px]">No catches yet. Tap "Walk &amp; catch" to find one.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {caught.map((id) => (
+                  <div key={id} className="flex items-center gap-1 rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">
+                    <img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`}
+                      alt={`#${id}`} className="h-8 w-8" style={{ imageRendering: "pixelated" }} />
+                    <span>#{id}</span>
+                    <button onClick={() => releaseOne(id)} className="ml-1 text-red-400">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="mt-2 text-[7px] text-muted-foreground sm:text-[9px]">
+              Your battle team is your starter + first 2 catches.
+            </p>
+          </section>
+
+          <section className="rounded border-2 border-border bg-panel p-3">
+            <p className="mb-2 text-[9px] text-primary sm:text-[11px]">GYM LEADERS ({beaten.length}/{GYM_LEADERS.length})</p>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {GYM_LEADERS.map((g) => {
+                const done = beaten.includes(g.id);
+                return (
+                  <div key={g.id} className={`rounded border-2 p-2 text-[8px] sm:text-[10px] ${done ? "border-primary bg-primary/10" : "border-border bg-muted"}`}>
+                    <p className="text-primary">{done ? "✓ " : ""}{g.name}</p>
+                    <div className="my-1 flex gap-1">
+                      {g.team.map((id) => (
+                        <img key={id} src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`}
+                          alt={`#${id}`} className="h-9 w-9" style={{ imageRendering: "pixelated" }} />
+                      ))}
+                    </div>
+                    <p className="text-muted-foreground">Reward: {g.reward}c</p>
+                    <button disabled={busy} onClick={() => challenge(g)}
+                      className="mt-1 w-full rounded border-2 border-border bg-accent px-2 py-1 text-[8px] text-primary-foreground disabled:opacity-40 sm:text-[10px]">
+                      ⚔ Challenge
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            {beaten.length === GYM_LEADERS.length && (
+              <p className="mt-2 text-[9px] text-primary">★ You are the Champion! ★</p>
+            )}
+          </section>
+        </>
+      )}
+    </main>
+  );
 }
