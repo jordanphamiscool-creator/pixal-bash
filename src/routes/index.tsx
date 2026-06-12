@@ -1041,13 +1041,19 @@ function Lobby(props: {
   coins: number; soundOn: boolean; setSoundOn: (s: boolean) => void;
   evolveSec: number; setEvolveSec: (n: number) => void;
   shop: ShopState;
+  favs: Favorite[]; setFavs: React.Dispatch<React.SetStateAction<Favorite[]>>;
+  onLoadIds: (ids: number[], teams?: number[], evolves?: boolean[]) => Promise<void>;
+  onSaveFav: (name: string) => void;
   onStart: () => void; loading: boolean;
   openShop: () => void;
+  openCatch: () => void;
 }) {
   const { mode, setMode, battleSize, setBattleSize, rosterMode, setRosterMode,
     picks, setPicks, randomRoster, reroll,
     betAmount, setBetAmount, betTarget, setBetTarget,
-    coins, soundOn, setSoundOn, evolveSec, setEvolveSec, shop, onStart, loading, openShop } = props;
+    coins, soundOn, setSoundOn, evolveSec, setEvolveSec, shop,
+    favs, setFavs, onLoadIds, onSaveFav,
+    onStart, loading, openShop, openCatch } = props;
 
   const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [search, setSearch] = useState("");
@@ -1139,8 +1145,8 @@ function Lobby(props: {
           }} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">
             {typeof window !== "undefined" && localStorage.getItem("ppb-infinite") === "1" ? "♾ ON" : "♾ Coins"}
           </button>
-          <button onClick={() => alert("Catch & Gym mode is in early scaffold — coming next update! Pick starters, walk in grass, catch wild Pokémon, then challenge Rock/Water/Electric/Grass gym leaders.")}
-            className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">🎒 Catch & Gym</button>
+          <button onClick={openCatch}
+            className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">🎒 Catch &amp; Gym</button>
           <button onClick={() => setSoundOn(!soundOn)} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">
             {soundOn ? "🔊 Sound" : "🔇 Muted"}
           </button>
