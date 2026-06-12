@@ -1043,7 +1043,7 @@ function Lobby(props: {
   }, [catalog, search, filterType, filterGen, filterRarity, filterForm, filterEvos, typeIdSet]);
 
   const addPick = async (entry: CatalogEntry) => {
-    if (picks.length >= 14) return;
+    if (picks.length >= 18) return;
     setBusyId(entry.id);
     const m = await fetchMon(entry.id, `pick-${entry.id}-${Date.now()}`);
     setBusyId(null);
@@ -1102,7 +1102,7 @@ function Lobby(props: {
             </div>
             <div>
               <p className="mb-1 text-muted-foreground">Pokémon per battle: <span className="text-primary">{battleSize}</span></p>
-              <input type="range" min={2} max={14} value={battleSize} onChange={(e) => setBattleSize(Number(e.target.value))} className="w-full" />
+              <input type="range" min={2} max={18} value={battleSize} onChange={(e) => setBattleSize(Number(e.target.value))} className="w-full" />
             </div>
             <div>
               <p className="mb-1 text-muted-foreground">Evolution timer: <span className="text-primary">{evolveSec}s</span></p>
