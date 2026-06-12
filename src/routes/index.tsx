@@ -17,7 +17,7 @@ export const Route = createFileRoute("/")({
 type ElementType = "normal" | "fire" | "water" | "grass" | "electric" | "psychic" | "rock" | "ground" | "flying" | "ice" | "ghost" | "dragon" | "dark" | "steel" | "fighting" | "bug" | "fairy" | "poison";
 type AttackKind = "fireball" | "waterjet" | "leaf" | "lightning" | "psybeam" | "rock" | "iceshard" | "shadowball" | "dragonpulse" | "punch" | "bugbuzz" | "fairywind";
 type Mode = "ffa" | "teams";
-type Screen = "lobby" | "battle" | "shop";
+type Screen = "lobby" | "battle" | "shop" | "catch";
 
 type MonData = {
   uid: string;
@@ -541,8 +541,9 @@ function Game() {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       if (runningRef.current && status === "fighting") step(dt, now);
-      // Throttle React renders to ~16fps so HP bars/log update without thrashing
-      if (now - lastRenderRef.current > 62) {
+      // Throttle React renders to ~11fps so HP bars/log update without thrashing.
+      // Lower than this triggers a TON of re-rendering with 18 mons.
+      if (now - lastRenderRef.current > 90) {
         lastRenderRef.current = now;
         force((n) => (n + 1) % 1_000_000);
       }
@@ -705,7 +706,7 @@ function Game() {
         const defReduction = 1 - Math.min(0.55, t.data.baseDef / 360);
         const dmg = Math.max(1, Math.round(d.basic.dmg * atkMul * formMul * (crit ? 1.5 : 1) * eff * defReduction * (0.75 + Math.random() * 0.5)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
-        if (projectilesRef.current.length < 60) {
+        if (projectilesRef.current.length < 40) {
           projectilesRef.current.push({
             id: idRef.current++, fromIdx: i, targetIdx: tgt,
             from: { ...m.pos }, pos: { ...m.pos }, angle: ang,
@@ -725,7 +726,7 @@ function Game() {
         const defReduction = 1 - Math.min(0.5, t.data.baseDef / 380);
         const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * formMul * (crit ? 1.7 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
-        if (projectilesRef.current.length < 60) {
+        if (projectilesRef.current.length < 40) {
           projectilesRef.current.push({
             id: idRef.current++, fromIdx: i, targetIdx: tgt,
             from: { ...m.pos }, pos: { ...m.pos }, angle: ang,
