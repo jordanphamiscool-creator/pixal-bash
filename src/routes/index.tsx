@@ -1338,10 +1338,12 @@ function Lobby(props: {
                 <option value="gmax">G-Max only</option>
                 <option value="regional">Regional</option>
               </select>
-              <select value={filterEvos} onChange={(e) => setFilterEvos(e.target.value as "all" | "1" | "2" | "3" | "4")}
+              <select value={filterEvos} onChange={(e) => setFilterEvos(e.target.value as typeof filterEvos)}
                 className="rounded border-2 border-border bg-background px-2 py-1 text-[8px] sm:text-[10px]" title="Evolutions">
-                <option value="all">Any evo</option>
-                <option value="1">Base/no special</option>
+                <option value="all">Any evo line</option>
+                <option value="basic">Basics only (no evo yet)</option>
+                <option value="1evo">1 evolution (2-stage)</option>
+                <option value="2evo">2 evolutions (3-stage)</option>
                 <option value="4">4+ (Mega/Gmax/Regional)</option>
               </select>
               {picks.length > 0 && (
