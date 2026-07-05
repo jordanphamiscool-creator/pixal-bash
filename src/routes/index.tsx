@@ -1095,6 +1095,9 @@ function Lobby(props: {
   rosterMode: "random" | "custom"; setRosterMode: (m: "random" | "custom") => void;
   picks: Pick[]; setPicks: (p: Pick[]) => void;
   randomRoster: MonData[]; reroll: () => void;
+  randomGen: "all" | number; setRandomGen: (v: "all" | number) => void;
+  randomRarity: "all" | "legendary" | "mythical" | "normal" | "nolegend"; setRandomRarity: (v: "all" | "legendary" | "mythical" | "normal" | "nolegend") => void;
+  randomEvo: "all" | "basic" | "final"; setRandomEvo: (v: "all" | "basic" | "final") => void;
   betAmount: number; setBetAmount: (n: number) => void;
   betTarget: string | null; setBetTarget: (t: string | null) => void;
   coins: number; soundOn: boolean; setSoundOn: (s: boolean) => void;
