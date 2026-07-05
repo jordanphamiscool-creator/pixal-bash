@@ -519,6 +519,9 @@ function Game() {
   const [rosterMode, setRosterMode] = useState<"random" | "custom">("random");
   const [picks, setPicks] = useState<Pick[]>([]);
   const [randomRoster, setRandomRoster] = useState<MonData[]>([]);
+  const [randomGen, setRandomGen] = useState<"all" | number>("all");
+  const [randomRarity, setRandomRarity] = useState<"all" | "legendary" | "mythical" | "normal" | "nolegend">("all");
+  const [randomEvo, setRandomEvo] = useState<"all" | "basic" | "final">("all");
   const [betAmount, setBetAmount] = useState(10);
   const [betTarget, setBetTarget] = useState<string | null>(null);
   const [coins, setCoins] = useState<number>(STARTING_COINS);
