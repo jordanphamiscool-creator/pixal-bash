@@ -1056,6 +1056,9 @@ function Game() {
         rosterMode={rosterMode} setRosterMode={setRosterMode}
         picks={picks} setPicks={setPicks}
         randomRoster={randomRoster} reroll={rollRandomRoster}
+        randomGen={randomGen} setRandomGen={setRandomGen}
+        randomRarity={randomRarity} setRandomRarity={setRandomRarity}
+        randomEvo={randomEvo} setRandomEvo={setRandomEvo}
         betAmount={betAmount} setBetAmount={setBetAmount}
         betTarget={betTarget} setBetTarget={setBetTarget}
         coins={coins} soundOn={soundOn} setSoundOn={setSoundOn}
