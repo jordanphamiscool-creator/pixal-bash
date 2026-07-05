@@ -373,10 +373,22 @@ async function fetchEvoChain(url: string): Promise<number[]> {
 // Walks: speciesId → its evolution chain (linear forward) → at final stage, swap to a
 // random alt form (mega/gmax/regional/etc) if any exist.
 async function buildLinkedFromSpecies(startSpeciesId: number, uid: string): Promise<MonData | null> {
+  // Special: Zygarde progresses 10% -> 50% -> Complete, not straight to a mega.
+  if (startSpeciesId === 718) {
+    const zIds = [10118, 718, 10120]; // 10%, 50%, Complete
+    const stages: MonData[] = [];
+    for (const zid of zIds) {
+      const m = await fetchMon(zid, `${uid}-z${zid}`);
+      if (m) stages.push(m);
+    }
+    if (stages.length === 0) return fetchMon(718, uid);
+    for (let i = stages.length - 2; i >= 0; i--) stages[i].evolveTo = stages[i + 1];
+    return { ...stages[0], uid };
+  }
+
   const sp = await fetchSpecies(startSpeciesId);
   if (!sp) return fetchMon(startSpeciesId, uid);
   const chain = await fetchEvoChain(sp.evoChainUrl);
-  // Find the index of this species in the chain and walk forward.
   const idx = chain.indexOf(startSpeciesId);
   const forward = idx >= 0 ? chain.slice(idx) : chain;
   if (forward.length === 0) return fetchMon(startSpeciesId, uid);
