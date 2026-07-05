@@ -1077,9 +1077,10 @@ function Lobby(props: {
   const [filterGen, setFilterGen] = useState<"all" | number>("all");
   const [filterRarity, setFilterRarity] = useState<"all" | "legendary" | "mythical" | "ultrabeast" | "normal">("all");
   const [filterForm, setFilterForm] = useState<"all" | "mega" | "gmax" | "regional">("all");
-  const [filterEvos, setFilterEvos] = useState<"all" | "1" | "2" | "3" | "4">("all");
+  const [filterEvos, setFilterEvos] = useState<"all" | "basic" | "1evo" | "2evo" | "4">("all");
   const [busyId, setBusyId] = useState<number | null>(null);
   const [typeIdSet, setTypeIdSet] = useState<Set<number> | null>(null);
+  const [evoLen, setEvoLen] = useState<Record<number, number>>({});
 
   useEffect(() => { loadCatalog().then(setCatalog).catch(() => {}); }, []);
 
