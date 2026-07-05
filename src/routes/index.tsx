@@ -1111,7 +1111,7 @@ function Lobby(props: {
   openCatch: () => void;
 }) {
   const { mode, setMode, battleSize, setBattleSize, rosterMode, setRosterMode,
-    picks, setPicks, randomRoster, reroll,
+    picks, setPicks, randomRoster, reroll, randomGen, setRandomGen, randomRarity, setRandomRarity, randomEvo, setRandomEvo,
     betAmount, setBetAmount, betTarget, setBetTarget,
     coins, soundOn, setSoundOn, evolveSec, setEvolveSec, shop,
     favs, setFavs, onLoadIds, onSaveFav,
