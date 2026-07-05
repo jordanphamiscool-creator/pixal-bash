@@ -1167,7 +1167,7 @@ function Lobby(props: {
             </div>
             <div>
               <p className="mb-1 text-muted-foreground">Pokémon per battle: <span className="text-primary">{battleSize}</span></p>
-              <input type="range" min={2} max={18} value={battleSize} onChange={(e) => setBattleSize(Number(e.target.value))} className="w-full" />
+              <input type="range" min={2} max={80} value={battleSize} onChange={(e) => setBattleSize(Number(e.target.value))} className="w-full" />
             </div>
             <div>
               <p className="mb-1 text-muted-foreground">Evolution timer: <span className="text-primary">{evolveSec}s</span></p>
