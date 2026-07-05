@@ -682,21 +682,25 @@ function Game() {
           m.hp = Math.min(newMax, Math.max(40, Math.round(newMax * ratio + 50)));
           pushLog(`${oldName} evolved into ${next.name}!`, next.color);
           if (soundRef.current) playSound(next.cry, volume);
-        } else if (m.plusLevel === 0) {
-          // Plus evolution — no Mega/Gmax/regional available, but still grant a power boost
+        } else if (m.plusLevel < 2) {
+          // Plus evolution — no Mega/Gmax/regional available. Two stackable levels.
           const oldName = d.name;
-          m.data = { ...d, name: d.name.startsWith("✦") ? d.name : `✦${d.name}`,
-            baseAtk: Math.round(d.baseAtk * 1.25), baseDef: Math.round(d.baseDef * 1.15),
-            baseSpd: Math.round(d.baseSpd * 1.1), baseHp: Math.round(d.baseHp * 1.25),
-            signature: { ...d.signature, dmg: Math.round(d.signature.dmg * 1.25) },
-            basic: { ...d.basic, dmg: Math.round(d.basic.dmg * 1.25) } };
-          m.plusLevel = 1;
+          const nextLevel = m.plusLevel + 1;
+          const prefix = nextLevel === 1 ? "✦" : "✦✦";
+          const mul = nextLevel === 1 ? 1.25 : 1.18; // second stage adds ~18% on top
+          const strippedName = d.name.replace(/^✦+/, "");
+          m.data = { ...d, name: `${prefix}${strippedName}`,
+            baseAtk: Math.round(d.baseAtk * mul), baseDef: Math.round(d.baseDef * (nextLevel === 1 ? 1.15 : 1.12)),
+            baseSpd: Math.round(d.baseSpd * 1.08), baseHp: Math.round(d.baseHp * mul),
+            signature: { ...d.signature, dmg: Math.round(d.signature.dmg * mul) },
+            basic: { ...d.basic, dmg: Math.round(d.basic.dmg * mul) } };
+          m.plusLevel = nextLevel;
           m.evolveTimer = 0;
           m.evolveFlashUntil = now + EVOLVE_FLASH_MS;
-          const newMax = Math.round(m.maxHp * 1.25);
+          const newMax = Math.round(m.maxHp * mul);
           m.maxHp = newMax;
-          m.hp = Math.min(newMax, Math.round(m.hp + newMax * 0.25));
-          pushLog(`${oldName} powered up to ✦Plus form!`, d.color);
+          m.hp = Math.min(newMax, Math.round(m.hp + newMax * 0.2));
+          pushLog(`${oldName} powered up to ${prefix}Plus form!`, d.color);
           if (soundRef.current) playSound(d.cry, volume);
         }
       }
