@@ -373,10 +373,22 @@ async function fetchEvoChain(url: string): Promise<number[]> {
 // Walks: speciesId → its evolution chain (linear forward) → at final stage, swap to a
 // random alt form (mega/gmax/regional/etc) if any exist.
 async function buildLinkedFromSpecies(startSpeciesId: number, uid: string): Promise<MonData | null> {
+  // Special: Zygarde progresses 10% -> 50% -> Complete, not straight to a mega.
+  if (startSpeciesId === 718) {
+    const zIds = [10118, 718, 10120]; // 10%, 50%, Complete
+    const stages: MonData[] = [];
+    for (const zid of zIds) {
+      const m = await fetchMon(zid, `${uid}-z${zid}`);
+      if (m) stages.push(m);
+    }
+    if (stages.length === 0) return fetchMon(718, uid);
+    for (let i = stages.length - 2; i >= 0; i--) stages[i].evolveTo = stages[i + 1];
+    return { ...stages[0], uid };
+  }
+
   const sp = await fetchSpecies(startSpeciesId);
   if (!sp) return fetchMon(startSpeciesId, uid);
   const chain = await fetchEvoChain(sp.evoChainUrl);
-  // Find the index of this species in the chain and walk forward.
   const idx = chain.indexOf(startSpeciesId);
   const forward = idx >= 0 ? chain.slice(idx) : chain;
   if (forward.length === 0) return fetchMon(startSpeciesId, uid);
@@ -492,7 +504,7 @@ function writeFavs(f: Favorite[]) { lsSet("ppb-favs-v1", f); }
 const PRESETS: { id: string; label: string; ids: number[]; description: string }[] = [
   { id: "gen1-starters", label: "Gen 1 Starters", description: "Bulbasaur · Charmander · Squirtle", ids: [1, 4, 7] },
   { id: "all-starters", label: "All Starters", description: "Every starter, all gens (18-way)", ids: [1,4,7,152,155,158,252,255,258,387,390,393,495,498,501,650,653,656,722,725,728,810,813,816,906,909,912] },
-  { id: "gen1-first", label: "Gen 1 First-Stages", description: "Charmander, Squirtle, Bulbasaur, Ekans, Sandshrew, Rattata, Nidoran♂, Pikachu, Zubat, Oddish — they all evolve!", ids: [4,7,1,23,27,19,32,25,41,43] },
+  { id: "gen1-first", label: "Gen 1 First-Stages (ALL)", description: "Every Gen 1 base-stage evolution — 76 of them! They all evolve.", ids: [1,4,7,10,13,16,19,21,23,25,27,29,32,35,37,39,41,43,46,48,50,52,54,56,58,60,63,66,69,72,74,77,79,81,83,84,86,88,90,92,95,96,98,100,102,104,106,107,108,109,111,113,114,115,116,118,120,122,123,124,125,126,127,128,129,131,132,133,137,138,140,142,143,147,150,151] },
   { id: "gen1-legends", label: "Gen 1 Legends", description: "The original birds + Mewtwo + Mew", ids: [144,145,146,150,151] },
   { id: "eeveelutions", label: "Eeveelutions", description: "All 8 eeveelutions battle", ids: [134,135,136,196,197,470,471,700] },
 ];
@@ -507,6 +519,9 @@ function Game() {
   const [rosterMode, setRosterMode] = useState<"random" | "custom">("random");
   const [picks, setPicks] = useState<Pick[]>([]);
   const [randomRoster, setRandomRoster] = useState<MonData[]>([]);
+  const [randomGen, setRandomGen] = useState<"all" | number>("all");
+  const [randomRarity, setRandomRarity] = useState<"all" | "legendary" | "mythical" | "normal" | "nolegend">("all");
+  const [randomEvo, setRandomEvo] = useState<"all" | "basic" | "final">("all");
   const [betAmount, setBetAmount] = useState(10);
   const [betTarget, setBetTarget] = useState<string | null>(null);
   const [coins, setCoins] = useState<number>(STARTING_COINS);
@@ -670,21 +685,25 @@ function Game() {
           m.hp = Math.min(newMax, Math.max(40, Math.round(newMax * ratio + 50)));
           pushLog(`${oldName} evolved into ${next.name}!`, next.color);
           if (soundRef.current) playSound(next.cry, volume);
-        } else if (m.plusLevel === 0) {
-          // Plus evolution — no Mega/Gmax/regional available, but still grant a power boost
+        } else if (m.plusLevel < 2) {
+          // Plus evolution — no Mega/Gmax/regional available. Two stackable levels.
           const oldName = d.name;
-          m.data = { ...d, name: d.name.startsWith("✦") ? d.name : `✦${d.name}`,
-            baseAtk: Math.round(d.baseAtk * 1.25), baseDef: Math.round(d.baseDef * 1.15),
-            baseSpd: Math.round(d.baseSpd * 1.1), baseHp: Math.round(d.baseHp * 1.25),
-            signature: { ...d.signature, dmg: Math.round(d.signature.dmg * 1.25) },
-            basic: { ...d.basic, dmg: Math.round(d.basic.dmg * 1.25) } };
-          m.plusLevel = 1;
+          const nextLevel = m.plusLevel + 1;
+          const prefix = nextLevel === 1 ? "✦" : "✦✦";
+          const mul = nextLevel === 1 ? 1.25 : 1.18; // second stage adds ~18% on top
+          const strippedName = d.name.replace(/^✦+/, "");
+          m.data = { ...d, name: `${prefix}${strippedName}`,
+            baseAtk: Math.round(d.baseAtk * mul), baseDef: Math.round(d.baseDef * (nextLevel === 1 ? 1.15 : 1.12)),
+            baseSpd: Math.round(d.baseSpd * 1.08), baseHp: Math.round(d.baseHp * mul),
+            signature: { ...d.signature, dmg: Math.round(d.signature.dmg * mul) },
+            basic: { ...d.basic, dmg: Math.round(d.basic.dmg * mul) } };
+          m.plusLevel = nextLevel;
           m.evolveTimer = 0;
           m.evolveFlashUntil = now + EVOLVE_FLASH_MS;
-          const newMax = Math.round(m.maxHp * 1.25);
+          const newMax = Math.round(m.maxHp * mul);
           m.maxHp = newMax;
-          m.hp = Math.min(newMax, Math.round(m.hp + newMax * 0.25));
-          pushLog(`${oldName} powered up to ✦Plus form!`, d.color);
+          m.hp = Math.min(newMax, Math.round(m.hp + newMax * 0.2));
+          pushLog(`${oldName} powered up to ${prefix}Plus form!`, d.color);
           if (soundRef.current) playSound(d.cry, volume);
         }
       }
@@ -795,22 +814,59 @@ function Game() {
   const rollRandomRoster = useCallback(async () => {
     setLoading(true);
     try {
-      // Uniform sample across all 1025 species
+      // Build the ID pool from filters
+      let pool: number[] = [];
+      if (randomGen === "all") {
+        for (let i = 1; i <= 1025; i++) pool.push(i);
+      } else {
+        const [a, b] = GEN_RANGES[randomGen - 1];
+        for (let i = a; i <= b; i++) pool.push(i);
+      }
+      if (randomRarity !== "all") {
+        pool = pool.filter((id) => {
+          const r = rarityOf(id);
+          if (randomRarity === "nolegend") return r === "normal";
+          return r === randomRarity;
+        });
+      }
+      if (randomEvo === "basic") {
+        // Basics only — use cached evo chain data where available; fetch for the pool.
+        const basics: number[] = [];
+        for (const id of pool.slice(0, 400)) {
+          const sp = await fetchSpecies(id);
+          if (!sp?.evoChainUrl) { basics.push(id); continue; }
+          const chain = await fetchEvoChain(sp.evoChainUrl);
+          if (chain[0] === id) basics.push(id);
+        }
+        pool = basics;
+      } else if (randomEvo === "final") {
+        const finals: number[] = [];
+        for (const id of pool.slice(0, 400)) {
+          const sp = await fetchSpecies(id);
+          if (!sp?.evoChainUrl) { finals.push(id); continue; }
+          const chain = await fetchEvoChain(sp.evoChainUrl);
+          if (chain[chain.length - 1] === id) finals.push(id);
+        }
+        pool = finals;
+      }
+      if (pool.length === 0) { setRandomRoster([]); return; }
       const seen = new Set<number>();
       const picksIds: number[] = [];
-      while (picksIds.length < battleSize) {
-        const id = 1 + Math.floor(Math.random() * 1025);
+      let guard = 0;
+      while (picksIds.length < battleSize && guard++ < 2000) {
+        const id = pool[Math.floor(Math.random() * pool.length)];
         if (!seen.has(id)) { seen.add(id); picksIds.push(id); }
+        if (seen.size >= pool.length) break;
       }
       const built = await Promise.all(picksIds.map((id, i) => buildLinkedFromSpecies(id, `r${i}`)));
       setRandomRoster(built.filter((b): b is MonData => !!b));
     } finally { setLoading(false); }
-  }, [battleSize]);
+  }, [battleSize, randomGen, randomRarity, randomEvo]);
 
   useEffect(() => {
     if (screen === "lobby" && rosterMode === "random") void rollRandomRoster();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, rosterMode, battleSize]);
+  }, [screen, rosterMode, battleSize, randomGen, randomRarity, randomEvo]);
 
   // Load picks from a list of IDs (favorites/presets). Optionally split into teams.
   const loadPicksFromIds = useCallback(async (ids: number[], teams?: number[], evolves?: boolean[]) => {
@@ -1000,6 +1056,9 @@ function Game() {
         rosterMode={rosterMode} setRosterMode={setRosterMode}
         picks={picks} setPicks={setPicks}
         randomRoster={randomRoster} reroll={rollRandomRoster}
+        randomGen={randomGen} setRandomGen={setRandomGen}
+        randomRarity={randomRarity} setRandomRarity={setRandomRarity}
+        randomEvo={randomEvo} setRandomEvo={setRandomEvo}
         betAmount={betAmount} setBetAmount={setBetAmount}
         betTarget={betTarget} setBetTarget={setBetTarget}
         coins={coins} soundOn={soundOn} setSoundOn={setSoundOn}
@@ -1036,6 +1095,9 @@ function Lobby(props: {
   rosterMode: "random" | "custom"; setRosterMode: (m: "random" | "custom") => void;
   picks: Pick[]; setPicks: (p: Pick[]) => void;
   randomRoster: MonData[]; reroll: () => void;
+  randomGen: "all" | number; setRandomGen: (v: "all" | number) => void;
+  randomRarity: "all" | "legendary" | "mythical" | "normal" | "nolegend"; setRandomRarity: (v: "all" | "legendary" | "mythical" | "normal" | "nolegend") => void;
+  randomEvo: "all" | "basic" | "final"; setRandomEvo: (v: "all" | "basic" | "final") => void;
   betAmount: number; setBetAmount: (n: number) => void;
   betTarget: string | null; setBetTarget: (t: string | null) => void;
   coins: number; soundOn: boolean; setSoundOn: (s: boolean) => void;
@@ -1049,7 +1111,7 @@ function Lobby(props: {
   openCatch: () => void;
 }) {
   const { mode, setMode, battleSize, setBattleSize, rosterMode, setRosterMode,
-    picks, setPicks, randomRoster, reroll,
+    picks, setPicks, randomRoster, reroll, randomGen, setRandomGen, randomRarity, setRandomRarity, randomEvo, setRandomEvo,
     betAmount, setBetAmount, betTarget, setBetTarget,
     coins, soundOn, setSoundOn, evolveSec, setEvolveSec, shop,
     favs, setFavs, onLoadIds, onSaveFav,
@@ -1061,9 +1123,10 @@ function Lobby(props: {
   const [filterGen, setFilterGen] = useState<"all" | number>("all");
   const [filterRarity, setFilterRarity] = useState<"all" | "legendary" | "mythical" | "ultrabeast" | "normal">("all");
   const [filterForm, setFilterForm] = useState<"all" | "mega" | "gmax" | "regional">("all");
-  const [filterEvos, setFilterEvos] = useState<"all" | "1" | "2" | "3" | "4">("all");
+  const [filterEvos, setFilterEvos] = useState<"all" | "basic" | "1evo" | "2evo" | "4">("all");
   const [busyId, setBusyId] = useState<number | null>(null);
   const [typeIdSet, setTypeIdSet] = useState<Set<number> | null>(null);
+  const [evoLen, setEvoLen] = useState<Record<number, number>>({});
 
   useEffect(() => { loadCatalog().then(setCatalog).catch(() => {}); }, []);
 
@@ -1096,21 +1159,46 @@ function Lobby(props: {
       if (filterGen !== "all" && c.id <= 1025 && genOf(c.id) !== filterGen) return false;
       if (filterRarity !== "all" && c.id <= 1025 && rarityOf(c.id) !== filterRarity) return false;
       if (filterType !== "all" && typeIdSet && !typeIdSet.has(c.id)) return false;
-      if (filterEvos !== "all") {
-        // Approx: 4 = has Mega/Gmax/regional in name; otherwise we can't know without an extra fetch.
-        const hasSpecial = isMegaName(c.name) || isGmaxName(c.name) || isRegionalName(c.name);
-        if (filterEvos === "4" && !hasSpecial) return false;
-        if (filterEvos !== "4" && hasSpecial) return false;
+      const hasSpecial = isMegaName(c.name) || isGmaxName(c.name) || isRegionalName(c.name);
+      if (filterEvos === "4" && !hasSpecial) return false;
+      if (filterEvos !== "all" && filterEvos !== "4" && hasSpecial) return false;
+      if ((filterEvos === "basic" || filterEvos === "1evo" || filterEvos === "2evo") && c.id <= 1025) {
+        const len = evoLen[c.id];
+        if (len !== undefined) {
+          if (filterEvos === "basic" && len !== 1) return false;
+          if (filterEvos === "1evo" && len !== 2) return false;
+          if (filterEvos === "2evo" && len < 3) return false;
+        }
+        // if len undefined, pass through — background fetch will resolve.
       }
       if (!s) return true;
       return c.name.includes(s) || c.display.toLowerCase().includes(s);
     }).slice(0, 320);
-  }, [catalog, search, filterType, filterGen, filterRarity, filterForm, filterEvos, typeIdSet]);
+  }, [catalog, search, filterType, filterGen, filterRarity, filterForm, filterEvos, typeIdSet, evoLen]);
+
+  // Lazy-fetch evo chain length for entries the user is filtering by stage.
+  useEffect(() => {
+    if (filterEvos !== "basic" && filterEvos !== "1evo" && filterEvos !== "2evo") return;
+    const targets = filtered.filter((c) => c.id <= 1025 && evoLen[c.id] === undefined).slice(0, 60);
+    if (targets.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (const c of targets) {
+        if (cancelled) return;
+        const sp = await fetchSpecies(c.id);
+        if (!sp?.evoChainUrl) { setEvoLen((m) => ({ ...m, [c.id]: 1 })); continue; }
+        const chain = await fetchEvoChain(sp.evoChainUrl);
+        const len = chain.length || 1;
+        setEvoLen((m) => ({ ...m, [c.id]: len }));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [filterEvos, filtered, evoLen]);
 
   const addPick = async (entry: CatalogEntry) => {
-    if (picks.length >= 18) return;
+    if (picks.length >= 80) return;
     setBusyId(entry.id);
-    const m = await fetchMon(entry.id, `pick-${entry.id}-${Date.now()}`);
+    const m = await fetchMon(entry.id, `pick-${entry.id}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`);
     setBusyId(null);
     if (m) {
       setPicks([...picks, { mon: m, team: picks.length % 2, evolve: true }]);
@@ -1167,7 +1255,7 @@ function Lobby(props: {
             </div>
             <div>
               <p className="mb-1 text-muted-foreground">Pokémon per battle: <span className="text-primary">{battleSize}</span></p>
-              <input type="range" min={2} max={18} value={battleSize} onChange={(e) => setBattleSize(Number(e.target.value))} className="w-full" />
+              <input type="range" min={2} max={80} value={battleSize} onChange={(e) => setBattleSize(Number(e.target.value))} className="w-full" />
             </div>
             <div>
               <p className="mb-1 text-muted-foreground">Evolution timer: <span className="text-primary">{evolveSec}s</span></p>
@@ -1235,6 +1323,28 @@ function Lobby(props: {
             <p className="text-[9px] text-primary sm:text-[11px]">YOUR RANDOM ROSTER ({randomRoster.length}/{battleSize})</p>
             <button onClick={reroll} disabled={loading} className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">🎲 Re-roll</button>
           </div>
+          <div className="mb-2 flex flex-wrap items-center gap-1 text-[8px] sm:text-[10px]">
+            <span className="text-muted-foreground">Pool:</span>
+            <select value={randomGen} onChange={(e) => setRandomGen(e.target.value === "all" ? "all" : Number(e.target.value))}
+              className="rounded border-2 border-border bg-background px-2 py-1">
+              <option value="all">All Gens</option>
+              {[1,2,3,4,5,6,7,8,9].map((g) => <option key={g} value={g}>Gen {g}</option>)}
+            </select>
+            <select value={randomRarity} onChange={(e) => setRandomRarity(e.target.value as typeof randomRarity)}
+              className="rounded border-2 border-border bg-background px-2 py-1">
+              <option value="all">Any rarity</option>
+              <option value="nolegend">No legendaries</option>
+              <option value="legendary">Legendary only</option>
+              <option value="mythical">Mythical only</option>
+              <option value="normal">Normal only</option>
+            </select>
+            <select value={randomEvo} onChange={(e) => setRandomEvo(e.target.value as typeof randomEvo)}
+              className="rounded border-2 border-border bg-background px-2 py-1" title="Evolution stage">
+              <option value="all">Any stage</option>
+              <option value="basic">Basics only</option>
+              <option value="final">Final forms only</option>
+            </select>
+          </div>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-6 lg:grid-cols-8">
             {randomRoster.length === 0 ? <p className="col-span-full text-[8px] text-muted-foreground">Rolling…</p> : randomRoster.map((m) => (
               <div key={m.uid} className="flex flex-col items-center rounded border-2 border-border bg-muted p-1 text-[7px] sm:text-[9px]" title={m.name}>
@@ -1254,7 +1364,7 @@ function Lobby(props: {
         <div className="flex flex-wrap gap-2">
           {PRESETS.map((p) => (
             <button key={p.id} disabled={loading}
-              onClick={async () => { await onLoadIds(p.ids); setMode(p.ids.length > 6 ? "ffa" : "ffa"); }}
+              onClick={async () => { setBattleSize(Math.min(80, Math.max(2, p.ids.length))); await onLoadIds(p.ids); setMode("ffa"); }}
               title={p.description}
               className="rounded border-2 border-border bg-muted px-2 py-1 text-left text-[8px] hover:brightness-125 disabled:opacity-40 sm:text-[10px]">
               <div className="text-primary">{p.label}</div>
@@ -1322,10 +1432,12 @@ function Lobby(props: {
                 <option value="gmax">G-Max only</option>
                 <option value="regional">Regional</option>
               </select>
-              <select value={filterEvos} onChange={(e) => setFilterEvos(e.target.value as "all" | "1" | "2" | "3" | "4")}
+              <select value={filterEvos} onChange={(e) => setFilterEvos(e.target.value as typeof filterEvos)}
                 className="rounded border-2 border-border bg-background px-2 py-1 text-[8px] sm:text-[10px]" title="Evolutions">
-                <option value="all">Any evo</option>
-                <option value="1">Base/no special</option>
+                <option value="all">Any evo line</option>
+                <option value="basic">Basics only (no evo yet)</option>
+                <option value="1evo">1 evolution (2-stage)</option>
+                <option value="2evo">2 evolutions (3-stage)</option>
                 <option value="4">4+ (Mega/Gmax/Regional)</option>
               </select>
               {picks.length > 0 && (
@@ -1366,17 +1478,18 @@ function Lobby(props: {
             {catalog.length === 0 ? (
               <p className="col-span-full text-center text-[8px] text-muted-foreground">Loading Pokédex…</p>
             ) : filtered.map((c) => {
-              const isPicked = picks.some((p) => p.mon.id === c.id);
+              const count = picks.filter((p) => p.mon.id === c.id).length;
               return (
-                <button key={c.id} disabled={isPicked || busyId === c.id}
+                <button key={c.id} disabled={busyId === c.id}
                   onClick={() => addPick(c)}
-                  className="flex flex-col items-center rounded border-2 border-border bg-muted p-1 text-[7px] hover:brightness-125 disabled:opacity-40 sm:text-[8px]"
-                  title={c.display}>
+                  className="relative flex flex-col items-center rounded border-2 border-border bg-muted p-1 text-[7px] hover:brightness-125 disabled:opacity-40 sm:text-[8px]"
+                  title={c.display + (count > 0 ? ` (×${count} picked — tap to add another)` : "")}>
                   <img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${c.id}.png`}
                     onError={(e) => { (e.currentTarget as HTMLImageElement).src = `https://play.pokemonshowdown.com/sprites/gen5/${slugify(c.name)}.png`; }}
                     alt={c.display}
                     loading="lazy" className="h-10 w-10" style={{ imageRendering: "pixelated", objectFit: "contain" }} />
                   <span className="truncate w-full text-center">{c.display}</span>
+                  {count > 0 && <span className="absolute right-0 top-0 rounded-bl bg-primary px-1 text-[7px] text-primary-foreground">×{count}</span>}
                 </button>
               );
             })}
@@ -1636,10 +1749,10 @@ function Battle(props: {
                 <div className="h-full transition-[width] duration-200" style={{ width: `${(m.hp / m.maxHp) * 100}%`, background: m.hp > m.maxHp * 0.4 ? "var(--color-hp)" : "var(--color-hp-low)" }} />
               </div>
               <p className="mt-1 text-[6px] text-muted-foreground sm:text-[7px]">A{d.baseAtk} D{d.baseDef} S{d.baseSpd}</p>
-              {!dead && m.evolveEnabled && (d.evolveTo || m.plusLevel === 0) && (() => {
+              {!dead && m.evolveEnabled && (d.evolveTo || m.plusLevel < 2) && (() => {
                 const total = (typeof window !== "undefined" ? (window as unknown as { __ppbEvolveMs?: number }).__ppbEvolveMs : 0) || 15000;
                 const remain = Math.max(0, Math.ceil((total - m.evolveTimer) / 1000));
-                const label = d.evolveTo ? (d.evolveTo.isMega ? "Mega" : d.evolveTo.isGmax ? "G-Max" : "Evo") : "Plus";
+                const label = d.evolveTo ? (d.evolveTo.isMega ? "Mega" : d.evolveTo.isGmax ? "G-Max" : "Evo") : (m.plusLevel === 0 ? "✦ Plus" : "✦✦ Plus");
                 return <p className="text-[6px] sm:text-[7px]" style={{ color: "#ffd83a" }}>{label} in {remain}s</p>;
               })()}
             </div>
@@ -1684,7 +1797,7 @@ function Battle(props: {
           {mons.map((m, i) => {
             const d = m.data;
             const fainted = m.hp <= 0;
-            const size = (d.isGmax ? 100 : d.isMega ? 84 : (m.plusLevel > 0 ? 72 : 64)) * sizeMul;
+            const size = (d.isGmax ? 100 : d.isMega ? 84 : (m.plusLevel === 2 ? 80 : m.plusLevel === 1 ? 72 : 64)) * sizeMul;
             const evolving = m.evolveFlashUntil && now < m.evolveFlashUntil;
             return (
               <div key={d.uid}
@@ -1927,6 +2040,23 @@ const GYM_LEADERS: { id: string; name: string; type: string; team: number[]; rew
   { id: "giovanni", name: "Giovanni — Ground", type: "ground", team: [51, 31, 34], reward: 220 },
 ];
 
+// Deterministic tile map: G = grass (encounter), P = path, T = tree, C = cell, W = water
+const CG_MAP: string[] = [
+  "TTTTTTTTTT",
+  "TPPPPGGGGT",
+  "TPTPPGGCGT",
+  "TPTTPGGGGT",
+  "TPPPPPPPPT",
+  "TGGCGPTPPT",
+  "TGGGGPTPCT",
+  "TGGGGPPPPT",
+  "TTTGGCPTTT",
+  "TTTTTTTTTT",
+];
+const CG_SIZE = 10;
+
+type Encounter = { id: number; mon: MonData; hp: number; maxHp: number; message: string };
+
 function CatchGym({ onClose, onChallengeGym }: {
   onClose: () => void;
   onChallengeGym: (yourTeam: number[], gymTeam: number[]) => Promise<void>;
@@ -1938,42 +2068,124 @@ function CatchGym({ onClose, onChallengeGym }: {
   });
   const [caught, setCaught] = useState<number[]>(() => lsGet<number[]>("ppb-team", []));
   const [beaten, setBeaten] = useState<string[]>(() => lsGet<string[]>("ppb-beaten", []));
+  const [cells, setCells] = useState<number>(() => lsGet<number>("ppb-cells", 0));
+  const [pickedCells, setPickedCells] = useState<Set<string>>(() => new Set(lsGet<string[]>("ppb-cells-picked", [])));
+  const [pos, setPos] = useState<{ x: number; y: number }>({ x: 4, y: 4 });
+  const [encounter, setEncounter] = useState<Encounter | null>(null);
   const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string>("Use the arrow keys or D-pad to walk. Step in the grass to find Pokémon!");
 
   useEffect(() => { if (starter !== null) localStorage.setItem("ppb-starter", String(starter)); }, [starter]);
   useEffect(() => { lsSet("ppb-team", caught); }, [caught]);
   useEffect(() => { lsSet("ppb-beaten", beaten); }, [beaten]);
+  useEffect(() => { lsSet("ppb-cells", cells); }, [cells]);
+  useEffect(() => { lsSet("ppb-cells-picked", Array.from(pickedCells)); }, [pickedCells]);
+
+  const [playerMon, setPlayerMon] = useState<MonData | null>(null);
+  useEffect(() => {
+    if (starter === null) { setPlayerMon(null); return; }
+    void fetchMon(starter, `pl-${starter}`).then(setPlayerMon);
+  }, [starter]);
 
   const team = useMemo(() => {
     const t: number[] = [];
     if (starter !== null) t.push(starter);
-    caught.forEach((c) => { if (!t.includes(c) && t.length < 3) t.push(c); });
+    caught.forEach((c) => { if (!t.includes(c) && t.length < 6) t.push(c); });
     return t;
   }, [starter, caught]);
 
-  const pickStarter = (id: number) => { setStarter(id); setCaught([]); setBeaten([]); };
-  const wildCatch = async () => {
+  const tileAt = (x: number, y: number) => CG_MAP[y]?.[x] ?? "T";
+
+  const pickStarter = (id: number) => { setStarter(id); setCaught([]); setBeaten([]); setCells(0); setPickedCells(new Set()); };
+
+  const triggerEncounter = useCallback(async () => {
     setBusy(true);
     try {
-      const id = 1 + Math.floor(Math.random() * 151); // gen 1 wild for simplicity
-      const m = await fetchMon(id, `wild-${id}`);
-      if (m) {
-        setCaught((c) => c.length >= 8 ? c : [...c, id]);
-        alert(`A wild ${m.name} appeared! You caught it. (Team box: ${caught.length + 1}/8)`);
-      }
+      // Wider pool than gen 1 — favor easy catches. Occasional "rare" boss (10% chance)
+      const rare = Math.random() < 0.1;
+      const id = rare ? 1 + Math.floor(Math.random() * 649) : 1 + Math.floor(Math.random() * 251);
+      const mon = await fetchMon(id, `wild-${id}-${Date.now()}`);
+      if (!mon) return;
+      const maxHp = Math.round(60 + mon.baseHp * (rare ? 1.6 : 1));
+      setEncounter({ id, mon, hp: maxHp, maxHp, message: `A wild ${rare ? "★ " : ""}${mon.name} appeared!` });
     } finally { setBusy(false); }
+  }, []);
+
+  const move = useCallback((dx: number, dy: number) => {
+    if (encounter || busy) return;
+    setPos((p) => {
+      const nx = Math.max(0, Math.min(CG_SIZE - 1, p.x + dx));
+      const ny = Math.max(0, Math.min(CG_SIZE - 1, p.y + dy));
+      const t = tileAt(nx, ny);
+      if (t === "T" || t === "W") return p; // blocked
+      const nkey = `${nx},${ny}`;
+      if (t === "C" && !pickedCells.has(nkey)) {
+        setCells((c) => c + 1);
+        setPickedCells((s) => { const n = new Set(s); n.add(nkey); return n; });
+        setMessage("You picked up a Zygarde Cell! Collect 10 for a bonus.");
+      }
+      if (t === "G" && Math.random() < 0.28) {
+        setMessage("The grass rustled…");
+        void triggerEncounter();
+      } else if (t === "G") {
+        setMessage("You stroll through the grass…");
+      } else {
+        setMessage("");
+      }
+      return { x: nx, y: ny };
+    });
+  }, [encounter, busy, pickedCells, triggerEncounter]);
+
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (e.key === "ArrowUp" || e.key === "w") { e.preventDefault(); move(0, -1); }
+      else if (e.key === "ArrowDown" || e.key === "s") { e.preventDefault(); move(0, 1); }
+      else if (e.key === "ArrowLeft" || e.key === "a") { e.preventDefault(); move(-1, 0); }
+      else if (e.key === "ArrowRight" || e.key === "d") { e.preventDefault(); move(1, 0); }
+    };
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, [move]);
+
+  const attackWild = () => {
+    if (!encounter || !playerMon) return;
+    const eff = typeMult(playerMon.type, encounter.mon.type);
+    const base = 15 + Math.floor(Math.random() * 20) + Math.round(playerMon.baseAtk * 0.08);
+    const dmg = Math.max(4, Math.round(base * eff));
+    const hp = Math.max(0, encounter.hp - dmg);
+    const label = eff >= 2 ? " (super effective!)" : eff <= 0.5 ? " (not very effective)" : "";
+    if (hp === 0) {
+      setEncounter({ ...encounter, hp, message: `${encounter.mon.name} fainted! ${dmg} dmg${label}` });
+      setTimeout(() => setEncounter(null), 1200);
+    } else {
+      setEncounter({ ...encounter, hp, message: `You dealt ${dmg} dmg${label}` });
+    }
   };
-  const releaseOne = (id: number) => setCaught((c) => c.filter((x) => x !== id));
+
+  const throwBall = () => {
+    if (!encounter) return;
+    const ratio = encounter.hp / encounter.maxHp;
+    const chance = Math.max(0.15, 0.95 - ratio * 0.8);
+    if (Math.random() < chance) {
+      setCaught((c) => c.length >= 24 ? c : [...c, encounter.id]);
+      setEncounter({ ...encounter, message: `Gotcha! ${encounter.mon.name} was caught!` });
+      setTimeout(() => setEncounter(null), 1400);
+    } else {
+      setEncounter({ ...encounter, message: "Oh no! It broke free!" });
+    }
+  };
+
+  const flee = () => setEncounter(null);
+
+  const releaseOne = (id: number) => setCaught((c) => { const i = c.indexOf(id); if (i < 0) return c; const n = [...c]; n.splice(i, 1); return n; });
 
   const challenge = async (g: typeof GYM_LEADERS[number]) => {
     if (team.length === 0) { alert("Pick a starter first!"); return; }
     setBusy(true);
     try {
-      // Pad your team to 3 with random caught/starter
       const my = [...team];
       while (my.length < 3) my.push(my[0]);
       await onChallengeGym(my.slice(0, 3), g.team);
-      // Optimistically mark as beaten — user verifies in the brawl. For now mark on challenge.
       if (!beaten.includes(g.id)) setBeaten((b) => [...b, g.id]);
     } finally { setBusy(false); }
   };
@@ -1984,10 +2196,13 @@ function CatchGym({ onClose, onChallengeGym }: {
         <div>
           <h1 className="text-[10px] tracking-wider text-primary sm:text-sm">CATCH &amp; GYM</h1>
           <p className="mt-1 text-[7px] text-muted-foreground sm:text-[9px]">
-            Pick a starter, catch wild mons, challenge gym leaders. Battles use the main engine.
+            Walk in the grass, catch Pokémon (infinite Poké Balls!), then challenge gym leaders.
           </p>
         </div>
-        <button onClick={onClose} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">← Lobby</button>
+        <div className="flex items-center gap-2">
+          <span className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">◉ Cells: {cells}</span>
+          <button onClick={onClose} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">← Lobby</button>
+        </div>
       </header>
 
       <section className="rounded border-2 border-border bg-panel p-3">
@@ -2007,20 +2222,85 @@ function CatchGym({ onClose, onChallengeGym }: {
 
       {starter !== null && (
         <>
+          {/* Walking map */}
           <section className="rounded border-2 border-border bg-panel p-3">
             <div className="mb-2 flex items-center justify-between">
-              <p className="text-[9px] text-primary sm:text-[11px]">WILD GRASS ({caught.length}/8)</p>
-              <button disabled={busy || caught.length >= 8} onClick={wildCatch}
-                className="rounded border-2 border-border bg-accent px-3 py-2 text-[8px] text-primary-foreground disabled:opacity-40 sm:text-[10px]">
-                🌿 Walk &amp; catch
-              </button>
+              <p className="text-[9px] text-primary sm:text-[11px]">WILD GRASS MAP</p>
+              <span className="text-[7px] text-muted-foreground sm:text-[9px]">{message}</span>
             </div>
+            <div className="grid gap-3 sm:grid-cols-[auto_1fr]">
+              <div className="mx-auto grid" style={{ gridTemplateColumns: `repeat(${CG_SIZE}, 28px)`, gridAutoRows: "28px" }}>
+                {CG_MAP.flatMap((row, y) => row.split("").map((t, x) => {
+                  const here = pos.x === x && pos.y === y;
+                  const cellPicked = pickedCells.has(`${x},${y}`);
+                  const bg = t === "T" ? "#2a5a2a" : t === "G" ? "#6bd36b" : t === "W" ? "#4ea8ff" : t === "C" ? (cellPicked ? "#8a7a55" : "#ffd83a") : "#c8b884";
+                  return (
+                    <div key={`${x},${y}`} style={{ background: bg, border: "1px solid rgba(0,0,0,0.15)", position: "relative" }}>
+                      {t === "T" && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 16, lineHeight: "28px" }}>🌲</span>}
+                      {t === "C" && !cellPicked && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 14, lineHeight: "28px" }}>◉</span>}
+                      {here && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 20, lineHeight: "28px" }}>🧑</span>}
+                    </div>
+                  );
+                }))}
+              </div>
+              {/* D-pad */}
+              <div className="flex flex-col items-center justify-center gap-1">
+                <button onClick={() => move(0, -1)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">▲</button>
+                <div className="flex gap-1">
+                  <button onClick={() => move(-1, 0)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">◀</button>
+                  <button onClick={() => move(0, 1)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">▼</button>
+                  <button onClick={() => move(1, 0)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">▶</button>
+                </div>
+                <p className="mt-2 text-[7px] text-muted-foreground sm:text-[9px]">Arrow keys work too</p>
+              </div>
+            </div>
+          </section>
+
+          {/* Encounter modal */}
+          {encounter && (
+            <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-4">
+              <div className="w-full max-w-md rounded border-4 border-primary bg-panel p-4 text-[9px] sm:text-[11px]">
+                <p className="mb-2 text-center text-primary">{encounter.message}</p>
+                <div className="mb-2 flex items-center justify-around">
+                  <div className="flex flex-col items-center">
+                    <img src={encounter.mon.sprite} alt={encounter.mon.name} className="h-24 w-24"
+                      style={{ imageRendering: "pixelated", filter: `drop-shadow(0 0 8px ${encounter.mon.color})` }} />
+                    <p style={{ color: encounter.mon.color }}>{encounter.mon.name}</p>
+                    <div className="h-1.5 w-24 overflow-hidden rounded bg-background">
+                      <div className="h-full" style={{ width: `${(encounter.hp / encounter.maxHp) * 100}%`, background: encounter.hp > encounter.maxHp * 0.4 ? "var(--color-hp)" : "var(--color-hp-low)" }} />
+                    </div>
+                    <p className="text-muted-foreground">{encounter.hp}/{encounter.maxHp} HP</p>
+                    <p className="text-muted-foreground">Type: {encounter.mon.type}</p>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    {playerMon ? (
+                      <>
+                        <img src={playerMon.sprite} alt={playerMon.name} className="h-20 w-20" style={{ imageRendering: "pixelated" }} />
+                        <p style={{ color: playerMon.color }}>{playerMon.name}</p>
+                        <p className="text-muted-foreground">You</p>
+                      </>
+                    ) : <p className="text-muted-foreground">Loading…</p>}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={attackWild} disabled={!playerMon} className="rounded border-2 border-border bg-accent px-2 py-2 text-primary-foreground disabled:opacity-40">⚔ Attack</button>
+                  <button onClick={throwBall} className="rounded border-2 border-border bg-primary px-2 py-2 text-primary-foreground">◉ Throw Poké Ball</button>
+                  <button onClick={flee} className="col-span-2 rounded border-2 border-border bg-muted px-2 py-1 text-[8px]">🏃 Run away</button>
+                </div>
+                <p className="mt-2 text-center text-[7px] text-muted-foreground">Weaken it first! Catch chance = {Math.round(Math.max(0.15, 0.95 - (encounter.hp / encounter.maxHp) * 0.8) * 100)}%</p>
+              </div>
+            </div>
+          )}
+
+          {/* Team box */}
+          <section className="rounded border-2 border-border bg-panel p-3">
+            <p className="mb-2 text-[9px] text-primary sm:text-[11px]">TEAM BOX ({caught.length}/24)</p>
             {caught.length === 0 ? (
-              <p className="text-[8px] text-muted-foreground sm:text-[10px]">No catches yet. Tap "Walk &amp; catch" to find one.</p>
+              <p className="text-[8px] text-muted-foreground sm:text-[10px]">No catches yet. Walk into tall grass to find wild Pokémon.</p>
             ) : (
               <div className="flex flex-wrap gap-2">
-                {caught.map((id) => (
-                  <div key={id} className="flex items-center gap-1 rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">
+                {caught.map((id, i) => (
+                  <div key={`${id}-${i}`} className="flex items-center gap-1 rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">
                     <img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`}
                       alt={`#${id}`} className="h-8 w-8" style={{ imageRendering: "pixelated" }} />
                     <span>#{id}</span>
@@ -2029,11 +2309,10 @@ function CatchGym({ onClose, onChallengeGym }: {
                 ))}
               </div>
             )}
-            <p className="mt-2 text-[7px] text-muted-foreground sm:text-[9px]">
-              Your battle team is your starter + first 2 catches.
-            </p>
+            <p className="mt-2 text-[7px] text-muted-foreground sm:text-[9px]">Your gym battle team is your starter + first 2 catches.</p>
           </section>
 
+          {/* Gyms */}
           <section className="rounded border-2 border-border bg-panel p-3">
             <p className="mb-2 text-[9px] text-primary sm:text-[11px]">GYM LEADERS ({beaten.length}/{GYM_LEADERS.length})</p>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
