@@ -1323,6 +1323,28 @@ function Lobby(props: {
             <p className="text-[9px] text-primary sm:text-[11px]">YOUR RANDOM ROSTER ({randomRoster.length}/{battleSize})</p>
             <button onClick={reroll} disabled={loading} className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">🎲 Re-roll</button>
           </div>
+          <div className="mb-2 flex flex-wrap items-center gap-1 text-[8px] sm:text-[10px]">
+            <span className="text-muted-foreground">Pool:</span>
+            <select value={randomGen} onChange={(e) => setRandomGen(e.target.value === "all" ? "all" : Number(e.target.value))}
+              className="rounded border-2 border-border bg-background px-2 py-1">
+              <option value="all">All Gens</option>
+              {[1,2,3,4,5,6,7,8,9].map((g) => <option key={g} value={g}>Gen {g}</option>)}
+            </select>
+            <select value={randomRarity} onChange={(e) => setRandomRarity(e.target.value as typeof randomRarity)}
+              className="rounded border-2 border-border bg-background px-2 py-1">
+              <option value="all">Any rarity</option>
+              <option value="nolegend">No legendaries</option>
+              <option value="legendary">Legendary only</option>
+              <option value="mythical">Mythical only</option>
+              <option value="normal">Normal only</option>
+            </select>
+            <select value={randomEvo} onChange={(e) => setRandomEvo(e.target.value as typeof randomEvo)}
+              className="rounded border-2 border-border bg-background px-2 py-1" title="Evolution stage">
+              <option value="all">Any stage</option>
+              <option value="basic">Basics only</option>
+              <option value="final">Final forms only</option>
+            </select>
+          </div>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-6 lg:grid-cols-8">
             {randomRoster.length === 0 ? <p className="col-span-full text-[8px] text-muted-foreground">Rolling…</p> : randomRoster.map((m) => (
               <div key={m.uid} className="flex flex-col items-center rounded border-2 border-border bg-muted p-1 text-[7px] sm:text-[9px]" title={m.name}>
