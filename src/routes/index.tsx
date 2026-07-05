@@ -1749,10 +1749,10 @@ function Battle(props: {
                 <div className="h-full transition-[width] duration-200" style={{ width: `${(m.hp / m.maxHp) * 100}%`, background: m.hp > m.maxHp * 0.4 ? "var(--color-hp)" : "var(--color-hp-low)" }} />
               </div>
               <p className="mt-1 text-[6px] text-muted-foreground sm:text-[7px]">A{d.baseAtk} D{d.baseDef} S{d.baseSpd}</p>
-              {!dead && m.evolveEnabled && (d.evolveTo || m.plusLevel === 0) && (() => {
+              {!dead && m.evolveEnabled && (d.evolveTo || m.plusLevel < 2) && (() => {
                 const total = (typeof window !== "undefined" ? (window as unknown as { __ppbEvolveMs?: number }).__ppbEvolveMs : 0) || 15000;
                 const remain = Math.max(0, Math.ceil((total - m.evolveTimer) / 1000));
-                const label = d.evolveTo ? (d.evolveTo.isMega ? "Mega" : d.evolveTo.isGmax ? "G-Max" : "Evo") : "Plus";
+                const label = d.evolveTo ? (d.evolveTo.isMega ? "Mega" : d.evolveTo.isGmax ? "G-Max" : "Evo") : (m.plusLevel === 0 ? "✦ Plus" : "✦✦ Plus");
                 return <p className="text-[6px] sm:text-[7px]" style={{ color: "#ffd83a" }}>{label} in {remain}s</p>;
               })()}
             </div>
