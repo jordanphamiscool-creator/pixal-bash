@@ -814,22 +814,59 @@ function Game() {
   const rollRandomRoster = useCallback(async () => {
     setLoading(true);
     try {
-      // Uniform sample across all 1025 species
+      // Build the ID pool from filters
+      let pool: number[] = [];
+      if (randomGen === "all") {
+        for (let i = 1; i <= 1025; i++) pool.push(i);
+      } else {
+        const [a, b] = GEN_RANGES[randomGen - 1];
+        for (let i = a; i <= b; i++) pool.push(i);
+      }
+      if (randomRarity !== "all") {
+        pool = pool.filter((id) => {
+          const r = rarityOf(id);
+          if (randomRarity === "nolegend") return r === "normal";
+          return r === randomRarity;
+        });
+      }
+      if (randomEvo === "basic") {
+        // Basics only — use cached evo chain data where available; fetch for the pool.
+        const basics: number[] = [];
+        for (const id of pool.slice(0, 400)) {
+          const sp = await fetchSpecies(id);
+          if (!sp?.evoChainUrl) { basics.push(id); continue; }
+          const chain = await fetchEvoChain(sp.evoChainUrl);
+          if (chain[0] === id) basics.push(id);
+        }
+        pool = basics;
+      } else if (randomEvo === "final") {
+        const finals: number[] = [];
+        for (const id of pool.slice(0, 400)) {
+          const sp = await fetchSpecies(id);
+          if (!sp?.evoChainUrl) { finals.push(id); continue; }
+          const chain = await fetchEvoChain(sp.evoChainUrl);
+          if (chain[chain.length - 1] === id) finals.push(id);
+        }
+        pool = finals;
+      }
+      if (pool.length === 0) { setRandomRoster([]); return; }
       const seen = new Set<number>();
       const picksIds: number[] = [];
-      while (picksIds.length < battleSize) {
-        const id = 1 + Math.floor(Math.random() * 1025);
+      let guard = 0;
+      while (picksIds.length < battleSize && guard++ < 2000) {
+        const id = pool[Math.floor(Math.random() * pool.length)];
         if (!seen.has(id)) { seen.add(id); picksIds.push(id); }
+        if (seen.size >= pool.length) break;
       }
       const built = await Promise.all(picksIds.map((id, i) => buildLinkedFromSpecies(id, `r${i}`)));
       setRandomRoster(built.filter((b): b is MonData => !!b));
     } finally { setLoading(false); }
-  }, [battleSize]);
+  }, [battleSize, randomGen, randomRarity, randomEvo]);
 
   useEffect(() => {
     if (screen === "lobby" && rosterMode === "random") void rollRandomRoster();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, rosterMode, battleSize]);
+  }, [screen, rosterMode, battleSize, randomGen, randomRarity, randomEvo]);
 
   // Load picks from a list of IDs (favorites/presets). Optionally split into teams.
   const loadPicksFromIds = useCallback(async (ids: number[], teams?: number[], evolves?: boolean[]) => {
