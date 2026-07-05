@@ -1797,7 +1797,7 @@ function Battle(props: {
           {mons.map((m, i) => {
             const d = m.data;
             const fainted = m.hp <= 0;
-            const size = (d.isGmax ? 100 : d.isMega ? 84 : (m.plusLevel > 0 ? 72 : 64)) * sizeMul;
+            const size = (d.isGmax ? 100 : d.isMega ? 84 : (m.plusLevel === 2 ? 80 : m.plusLevel === 1 ? 72 : 64)) * sizeMul;
             const evolving = m.evolveFlashUntil && now < m.evolveFlashUntil;
             return (
               <div key={d.uid}
