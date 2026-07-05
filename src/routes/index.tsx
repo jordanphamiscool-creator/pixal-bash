@@ -1410,17 +1410,18 @@ function Lobby(props: {
             {catalog.length === 0 ? (
               <p className="col-span-full text-center text-[8px] text-muted-foreground">Loading Pokédex…</p>
             ) : filtered.map((c) => {
-              const isPicked = picks.some((p) => p.mon.id === c.id);
+              const count = picks.filter((p) => p.mon.id === c.id).length;
               return (
-                <button key={c.id} disabled={isPicked || busyId === c.id}
+                <button key={c.id} disabled={busyId === c.id}
                   onClick={() => addPick(c)}
-                  className="flex flex-col items-center rounded border-2 border-border bg-muted p-1 text-[7px] hover:brightness-125 disabled:opacity-40 sm:text-[8px]"
-                  title={c.display}>
+                  className="relative flex flex-col items-center rounded border-2 border-border bg-muted p-1 text-[7px] hover:brightness-125 disabled:opacity-40 sm:text-[8px]"
+                  title={c.display + (count > 0 ? ` (×${count} picked — tap to add another)` : "")}>
                   <img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${c.id}.png`}
                     onError={(e) => { (e.currentTarget as HTMLImageElement).src = `https://play.pokemonshowdown.com/sprites/gen5/${slugify(c.name)}.png`; }}
                     alt={c.display}
                     loading="lazy" className="h-10 w-10" style={{ imageRendering: "pixelated", objectFit: "contain" }} />
                   <span className="truncate w-full text-center">{c.display}</span>
+                  {count > 0 && <span className="absolute right-0 top-0 rounded-bl bg-primary px-1 text-[7px] text-primary-foreground">×{count}</span>}
                 </button>
               );
             })}
