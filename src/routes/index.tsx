@@ -492,7 +492,7 @@ function writeFavs(f: Favorite[]) { lsSet("ppb-favs-v1", f); }
 const PRESETS: { id: string; label: string; ids: number[]; description: string }[] = [
   { id: "gen1-starters", label: "Gen 1 Starters", description: "Bulbasaur · Charmander · Squirtle", ids: [1, 4, 7] },
   { id: "all-starters", label: "All Starters", description: "Every starter, all gens (18-way)", ids: [1,4,7,152,155,158,252,255,258,387,390,393,495,498,501,650,653,656,722,725,728,810,813,816,906,909,912] },
-  { id: "gen1-first", label: "Gen 1 First-Stages", description: "Charmander, Squirtle, Bulbasaur, Ekans, Sandshrew, Rattata, Nidoran♂, Pikachu, Zubat, Oddish — they all evolve!", ids: [4,7,1,23,27,19,32,25,41,43] },
+  { id: "gen1-first", label: "Gen 1 First-Stages (ALL)", description: "Every Gen 1 base-stage evolution — 76 of them! They all evolve.", ids: [1,4,7,10,13,16,19,21,23,25,27,29,32,35,37,39,41,43,46,48,50,52,54,56,58,60,63,66,69,72,74,77,79,81,83,84,86,88,90,92,95,96,98,100,102,104,106,107,108,109,111,113,114,115,116,118,120,122,123,124,125,126,127,128,129,131,132,133,137,138,140,142,143,147,150,151] },
   { id: "gen1-legends", label: "Gen 1 Legends", description: "The original birds + Mewtwo + Mew", ids: [144,145,146,150,151] },
   { id: "eeveelutions", label: "Eeveelutions", description: "All 8 eeveelutions battle", ids: [134,135,136,196,197,470,471,700] },
 ];
