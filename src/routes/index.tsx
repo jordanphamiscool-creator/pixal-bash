@@ -2040,6 +2040,23 @@ const GYM_LEADERS: { id: string; name: string; type: string; team: number[]; rew
   { id: "giovanni", name: "Giovanni — Ground", type: "ground", team: [51, 31, 34], reward: 220 },
 ];
 
+// Deterministic tile map: G = grass (encounter), P = path, T = tree, C = cell, W = water
+const CG_MAP: string[] = [
+  "TTTTTTTTTT",
+  "TPPPPGGGGT",
+  "TPTPPGGCGT",
+  "TPTTPGGGGT",
+  "TPPPPPPPPT",
+  "TGGCGPTPPT",
+  "TGGGGPTPCT",
+  "TGGGGPPPPT",
+  "TTTGGCPTTT",
+  "TTTTTTTTTT",
+];
+const CG_SIZE = 10;
+
+type Encounter = { id: number; mon: MonData; hp: number; maxHp: number; message: string };
+
 function CatchGym({ onClose, onChallengeGym }: {
   onClose: () => void;
   onChallengeGym: (yourTeam: number[], gymTeam: number[]) => Promise<void>;
@@ -2051,42 +2068,122 @@ function CatchGym({ onClose, onChallengeGym }: {
   });
   const [caught, setCaught] = useState<number[]>(() => lsGet<number[]>("ppb-team", []));
   const [beaten, setBeaten] = useState<string[]>(() => lsGet<string[]>("ppb-beaten", []));
+  const [cells, setCells] = useState<number>(() => lsGet<number>("ppb-cells", 0));
+  const [pickedCells, setPickedCells] = useState<Set<string>>(() => new Set(lsGet<string[]>("ppb-cells-picked", [])));
+  const [pos, setPos] = useState<{ x: number; y: number }>({ x: 4, y: 4 });
+  const [encounter, setEncounter] = useState<Encounter | null>(null);
   const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string>("Use the arrow keys or D-pad to walk. Step in the grass to find Pokémon!");
 
   useEffect(() => { if (starter !== null) localStorage.setItem("ppb-starter", String(starter)); }, [starter]);
   useEffect(() => { lsSet("ppb-team", caught); }, [caught]);
   useEffect(() => { lsSet("ppb-beaten", beaten); }, [beaten]);
+  useEffect(() => { lsSet("ppb-cells", cells); }, [cells]);
+  useEffect(() => { lsSet("ppb-cells-picked", Array.from(pickedCells)); }, [pickedCells]);
+
+  const starterMon = useMemo(async () => starter !== null ? await fetchMon(starter, `pl-${starter}`) : null, [starter]);
+  const [playerMon, setPlayerMon] = useState<MonData | null>(null);
+  useEffect(() => { void starterMon.then(setPlayerMon); }, [starterMon]);
 
   const team = useMemo(() => {
     const t: number[] = [];
     if (starter !== null) t.push(starter);
-    caught.forEach((c) => { if (!t.includes(c) && t.length < 3) t.push(c); });
+    caught.forEach((c) => { if (!t.includes(c) && t.length < 6) t.push(c); });
     return t;
   }, [starter, caught]);
 
-  const pickStarter = (id: number) => { setStarter(id); setCaught([]); setBeaten([]); };
-  const wildCatch = async () => {
+  const tileAt = (x: number, y: number) => CG_MAP[y]?.[x] ?? "T";
+
+  const pickStarter = (id: number) => { setStarter(id); setCaught([]); setBeaten([]); setCells(0); setPickedCells(new Set()); };
+
+  const triggerEncounter = useCallback(async () => {
     setBusy(true);
     try {
-      const id = 1 + Math.floor(Math.random() * 151); // gen 1 wild for simplicity
-      const m = await fetchMon(id, `wild-${id}`);
-      if (m) {
-        setCaught((c) => c.length >= 8 ? c : [...c, id]);
-        alert(`A wild ${m.name} appeared! You caught it. (Team box: ${caught.length + 1}/8)`);
-      }
+      // Wider pool than gen 1 — favor easy catches. Occasional "rare" boss (10% chance)
+      const rare = Math.random() < 0.1;
+      const id = rare ? 1 + Math.floor(Math.random() * 649) : 1 + Math.floor(Math.random() * 251);
+      const mon = await fetchMon(id, `wild-${id}-${Date.now()}`);
+      if (!mon) return;
+      const maxHp = Math.round(60 + mon.baseHp * (rare ? 1.6 : 1));
+      setEncounter({ id, mon, hp: maxHp, maxHp, message: `A wild ${rare ? "★ " : ""}${mon.name} appeared!` });
     } finally { setBusy(false); }
+  }, []);
+
+  const move = useCallback((dx: number, dy: number) => {
+    if (encounter || busy) return;
+    setPos((p) => {
+      const nx = Math.max(0, Math.min(CG_SIZE - 1, p.x + dx));
+      const ny = Math.max(0, Math.min(CG_SIZE - 1, p.y + dy));
+      const t = tileAt(nx, ny);
+      if (t === "T" || t === "W") return p; // blocked
+      const nkey = `${nx},${ny}`;
+      if (t === "C" && !pickedCells.has(nkey)) {
+        setCells((c) => c + 1);
+        setPickedCells((s) => { const n = new Set(s); n.add(nkey); return n; });
+        setMessage("You picked up a Zygarde Cell! Collect 10 for a bonus.");
+      }
+      if (t === "G" && Math.random() < 0.28) {
+        setMessage("The grass rustled…");
+        void triggerEncounter();
+      } else if (t === "G") {
+        setMessage("You stroll through the grass…");
+      } else {
+        setMessage("");
+      }
+      return { x: nx, y: ny };
+    });
+  }, [encounter, busy, pickedCells, triggerEncounter]);
+
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (e.key === "ArrowUp" || e.key === "w") { e.preventDefault(); move(0, -1); }
+      else if (e.key === "ArrowDown" || e.key === "s") { e.preventDefault(); move(0, 1); }
+      else if (e.key === "ArrowLeft" || e.key === "a") { e.preventDefault(); move(-1, 0); }
+      else if (e.key === "ArrowRight" || e.key === "d") { e.preventDefault(); move(1, 0); }
+    };
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, [move]);
+
+  const attackWild = () => {
+    if (!encounter || !playerMon) return;
+    const eff = typeMult(playerMon.type, encounter.mon.type);
+    const base = 15 + Math.floor(Math.random() * 20) + Math.round(playerMon.baseAtk * 0.08);
+    const dmg = Math.max(4, Math.round(base * eff));
+    const hp = Math.max(0, encounter.hp - dmg);
+    const label = eff >= 2 ? " (super effective!)" : eff <= 0.5 ? " (not very effective)" : "";
+    if (hp === 0) {
+      setEncounter({ ...encounter, hp, message: `${encounter.mon.name} fainted! ${dmg} dmg${label}` });
+      setTimeout(() => setEncounter(null), 1200);
+    } else {
+      setEncounter({ ...encounter, hp, message: `You dealt ${dmg} dmg${label}` });
+    }
   };
-  const releaseOne = (id: number) => setCaught((c) => c.filter((x) => x !== id));
+
+  const throwBall = () => {
+    if (!encounter) return;
+    const ratio = encounter.hp / encounter.maxHp;
+    const chance = Math.max(0.15, 0.95 - ratio * 0.8);
+    if (Math.random() < chance) {
+      setCaught((c) => c.length >= 24 ? c : [...c, encounter.id]);
+      setEncounter({ ...encounter, message: `Gotcha! ${encounter.mon.name} was caught!` });
+      setTimeout(() => setEncounter(null), 1400);
+    } else {
+      setEncounter({ ...encounter, message: "Oh no! It broke free!" });
+    }
+  };
+
+  const flee = () => setEncounter(null);
+
+  const releaseOne = (id: number) => setCaught((c) => { const i = c.indexOf(id); if (i < 0) return c; const n = [...c]; n.splice(i, 1); return n; });
 
   const challenge = async (g: typeof GYM_LEADERS[number]) => {
     if (team.length === 0) { alert("Pick a starter first!"); return; }
     setBusy(true);
     try {
-      // Pad your team to 3 with random caught/starter
       const my = [...team];
       while (my.length < 3) my.push(my[0]);
       await onChallengeGym(my.slice(0, 3), g.team);
-      // Optimistically mark as beaten — user verifies in the brawl. For now mark on challenge.
       if (!beaten.includes(g.id)) setBeaten((b) => [...b, g.id]);
     } finally { setBusy(false); }
   };
@@ -2097,10 +2194,13 @@ function CatchGym({ onClose, onChallengeGym }: {
         <div>
           <h1 className="text-[10px] tracking-wider text-primary sm:text-sm">CATCH &amp; GYM</h1>
           <p className="mt-1 text-[7px] text-muted-foreground sm:text-[9px]">
-            Pick a starter, catch wild mons, challenge gym leaders. Battles use the main engine.
+            Walk in the grass, catch Pokémon (infinite Poké Balls!), then challenge gym leaders.
           </p>
         </div>
-        <button onClick={onClose} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">← Lobby</button>
+        <div className="flex items-center gap-2">
+          <span className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">◉ Cells: {cells}</span>
+          <button onClick={onClose} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">← Lobby</button>
+        </div>
       </header>
 
       <section className="rounded border-2 border-border bg-panel p-3">
@@ -2120,20 +2220,85 @@ function CatchGym({ onClose, onChallengeGym }: {
 
       {starter !== null && (
         <>
+          {/* Walking map */}
           <section className="rounded border-2 border-border bg-panel p-3">
             <div className="mb-2 flex items-center justify-between">
-              <p className="text-[9px] text-primary sm:text-[11px]">WILD GRASS ({caught.length}/8)</p>
-              <button disabled={busy || caught.length >= 8} onClick={wildCatch}
-                className="rounded border-2 border-border bg-accent px-3 py-2 text-[8px] text-primary-foreground disabled:opacity-40 sm:text-[10px]">
-                🌿 Walk &amp; catch
-              </button>
+              <p className="text-[9px] text-primary sm:text-[11px]">WILD GRASS MAP</p>
+              <span className="text-[7px] text-muted-foreground sm:text-[9px]">{message}</span>
             </div>
+            <div className="grid gap-3 sm:grid-cols-[auto_1fr]">
+              <div className="mx-auto grid" style={{ gridTemplateColumns: `repeat(${CG_SIZE}, 28px)`, gridAutoRows: "28px" }}>
+                {CG_MAP.flatMap((row, y) => row.split("").map((t, x) => {
+                  const here = pos.x === x && pos.y === y;
+                  const cellPicked = pickedCells.has(`${x},${y}`);
+                  const bg = t === "T" ? "#2a5a2a" : t === "G" ? "#6bd36b" : t === "W" ? "#4ea8ff" : t === "C" ? (cellPicked ? "#8a7a55" : "#ffd83a") : "#c8b884";
+                  return (
+                    <div key={`${x},${y}`} style={{ background: bg, border: "1px solid rgba(0,0,0,0.15)", position: "relative" }}>
+                      {t === "T" && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 16, lineHeight: "28px" }}>🌲</span>}
+                      {t === "C" && !cellPicked && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 14, lineHeight: "28px" }}>◉</span>}
+                      {here && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 20, lineHeight: "28px" }}>🧑</span>}
+                    </div>
+                  );
+                }))}
+              </div>
+              {/* D-pad */}
+              <div className="flex flex-col items-center justify-center gap-1">
+                <button onClick={() => move(0, -1)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">▲</button>
+                <div className="flex gap-1">
+                  <button onClick={() => move(-1, 0)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">◀</button>
+                  <button onClick={() => move(0, 1)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">▼</button>
+                  <button onClick={() => move(1, 0)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">▶</button>
+                </div>
+                <p className="mt-2 text-[7px] text-muted-foreground sm:text-[9px]">Arrow keys work too</p>
+              </div>
+            </div>
+          </section>
+
+          {/* Encounter modal */}
+          {encounter && (
+            <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-4">
+              <div className="w-full max-w-md rounded border-4 border-primary bg-panel p-4 text-[9px] sm:text-[11px]">
+                <p className="mb-2 text-center text-primary">{encounter.message}</p>
+                <div className="mb-2 flex items-center justify-around">
+                  <div className="flex flex-col items-center">
+                    <img src={encounter.mon.sprite} alt={encounter.mon.name} className="h-24 w-24"
+                      style={{ imageRendering: "pixelated", filter: `drop-shadow(0 0 8px ${encounter.mon.color})` }} />
+                    <p style={{ color: encounter.mon.color }}>{encounter.mon.name}</p>
+                    <div className="h-1.5 w-24 overflow-hidden rounded bg-background">
+                      <div className="h-full" style={{ width: `${(encounter.hp / encounter.maxHp) * 100}%`, background: encounter.hp > encounter.maxHp * 0.4 ? "var(--color-hp)" : "var(--color-hp-low)" }} />
+                    </div>
+                    <p className="text-muted-foreground">{encounter.hp}/{encounter.maxHp} HP</p>
+                    <p className="text-muted-foreground">Type: {encounter.mon.type}</p>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    {playerMon ? (
+                      <>
+                        <img src={playerMon.sprite} alt={playerMon.name} className="h-20 w-20" style={{ imageRendering: "pixelated" }} />
+                        <p style={{ color: playerMon.color }}>{playerMon.name}</p>
+                        <p className="text-muted-foreground">You</p>
+                      </>
+                    ) : <p className="text-muted-foreground">Loading…</p>}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={attackWild} disabled={!playerMon} className="rounded border-2 border-border bg-accent px-2 py-2 text-primary-foreground disabled:opacity-40">⚔ Attack</button>
+                  <button onClick={throwBall} className="rounded border-2 border-border bg-primary px-2 py-2 text-primary-foreground">◉ Throw Poké Ball</button>
+                  <button onClick={flee} className="col-span-2 rounded border-2 border-border bg-muted px-2 py-1 text-[8px]">🏃 Run away</button>
+                </div>
+                <p className="mt-2 text-center text-[7px] text-muted-foreground">Weaken it first! Catch chance = {Math.round(Math.max(0.15, 0.95 - (encounter.hp / encounter.maxHp) * 0.8) * 100)}%</p>
+              </div>
+            </div>
+          )}
+
+          {/* Team box */}
+          <section className="rounded border-2 border-border bg-panel p-3">
+            <p className="mb-2 text-[9px] text-primary sm:text-[11px]">TEAM BOX ({caught.length}/24)</p>
             {caught.length === 0 ? (
-              <p className="text-[8px] text-muted-foreground sm:text-[10px]">No catches yet. Tap "Walk &amp; catch" to find one.</p>
+              <p className="text-[8px] text-muted-foreground sm:text-[10px]">No catches yet. Walk into tall grass to find wild Pokémon.</p>
             ) : (
               <div className="flex flex-wrap gap-2">
-                {caught.map((id) => (
-                  <div key={id} className="flex items-center gap-1 rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">
+                {caught.map((id, i) => (
+                  <div key={`${id}-${i}`} className="flex items-center gap-1 rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">
                     <img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`}
                       alt={`#${id}`} className="h-8 w-8" style={{ imageRendering: "pixelated" }} />
                     <span>#{id}</span>
@@ -2142,11 +2307,10 @@ function CatchGym({ onClose, onChallengeGym }: {
                 ))}
               </div>
             )}
-            <p className="mt-2 text-[7px] text-muted-foreground sm:text-[9px]">
-              Your battle team is your starter + first 2 catches.
-            </p>
+            <p className="mt-2 text-[7px] text-muted-foreground sm:text-[9px]">Your gym battle team is your starter + first 2 catches.</p>
           </section>
 
+          {/* Gyms */}
           <section className="rounded border-2 border-border bg-panel p-3">
             <p className="mb-2 text-[9px] text-primary sm:text-[11px]">GYM LEADERS ({beaten.length}/{GYM_LEADERS.length})</p>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
