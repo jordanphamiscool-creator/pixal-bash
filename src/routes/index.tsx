@@ -2081,9 +2081,11 @@ function CatchGym({ onClose, onChallengeGym }: {
   useEffect(() => { lsSet("ppb-cells", cells); }, [cells]);
   useEffect(() => { lsSet("ppb-cells-picked", Array.from(pickedCells)); }, [pickedCells]);
 
-  const starterMon = useMemo(async () => starter !== null ? await fetchMon(starter, `pl-${starter}`) : null, [starter]);
   const [playerMon, setPlayerMon] = useState<MonData | null>(null);
-  useEffect(() => { void starterMon.then(setPlayerMon); }, [starterMon]);
+  useEffect(() => {
+    if (starter === null) { setPlayerMon(null); return; }
+    void fetchMon(starter, `pl-${starter}`).then(setPlayerMon);
+  }, [starter]);
 
   const team = useMemo(() => {
     const t: number[] = [];
