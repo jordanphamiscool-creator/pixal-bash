@@ -1113,21 +1113,46 @@ function Lobby(props: {
       if (filterGen !== "all" && c.id <= 1025 && genOf(c.id) !== filterGen) return false;
       if (filterRarity !== "all" && c.id <= 1025 && rarityOf(c.id) !== filterRarity) return false;
       if (filterType !== "all" && typeIdSet && !typeIdSet.has(c.id)) return false;
-      if (filterEvos !== "all") {
-        // Approx: 4 = has Mega/Gmax/regional in name; otherwise we can't know without an extra fetch.
-        const hasSpecial = isMegaName(c.name) || isGmaxName(c.name) || isRegionalName(c.name);
-        if (filterEvos === "4" && !hasSpecial) return false;
-        if (filterEvos !== "4" && hasSpecial) return false;
+      const hasSpecial = isMegaName(c.name) || isGmaxName(c.name) || isRegionalName(c.name);
+      if (filterEvos === "4" && !hasSpecial) return false;
+      if (filterEvos !== "all" && filterEvos !== "4" && hasSpecial) return false;
+      if ((filterEvos === "basic" || filterEvos === "1evo" || filterEvos === "2evo") && c.id <= 1025) {
+        const len = evoLen[c.id];
+        if (len !== undefined) {
+          if (filterEvos === "basic" && len !== 1) return false;
+          if (filterEvos === "1evo" && len !== 2) return false;
+          if (filterEvos === "2evo" && len < 3) return false;
+        }
+        // if len undefined, pass through — background fetch will resolve.
       }
       if (!s) return true;
       return c.name.includes(s) || c.display.toLowerCase().includes(s);
     }).slice(0, 320);
-  }, [catalog, search, filterType, filterGen, filterRarity, filterForm, filterEvos, typeIdSet]);
+  }, [catalog, search, filterType, filterGen, filterRarity, filterForm, filterEvos, typeIdSet, evoLen]);
+
+  // Lazy-fetch evo chain length for entries the user is filtering by stage.
+  useEffect(() => {
+    if (filterEvos !== "basic" && filterEvos !== "1evo" && filterEvos !== "2evo") return;
+    const targets = filtered.filter((c) => c.id <= 1025 && evoLen[c.id] === undefined).slice(0, 60);
+    if (targets.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (const c of targets) {
+        if (cancelled) return;
+        const sp = await fetchSpecies(c.id);
+        if (!sp?.evoChainUrl) { setEvoLen((m) => ({ ...m, [c.id]: 1 })); continue; }
+        const chain = await fetchEvoChain(sp.evoChainUrl);
+        const len = chain.length || 1;
+        setEvoLen((m) => ({ ...m, [c.id]: len }));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [filterEvos, filtered, evoLen]);
 
   const addPick = async (entry: CatalogEntry) => {
-    if (picks.length >= 18) return;
+    if (picks.length >= 80) return;
     setBusyId(entry.id);
-    const m = await fetchMon(entry.id, `pick-${entry.id}-${Date.now()}`);
+    const m = await fetchMon(entry.id, `pick-${entry.id}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`);
     setBusyId(null);
     if (m) {
       setPicks([...picks, { mon: m, team: picks.length % 2, evolve: true }]);
