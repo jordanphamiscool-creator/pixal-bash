@@ -1270,7 +1270,7 @@ function Lobby(props: {
         <div className="flex flex-wrap gap-2">
           {PRESETS.map((p) => (
             <button key={p.id} disabled={loading}
-              onClick={async () => { await onLoadIds(p.ids); setMode(p.ids.length > 6 ? "ffa" : "ffa"); }}
+              onClick={async () => { setBattleSize(Math.min(80, Math.max(2, p.ids.length))); await onLoadIds(p.ids); setMode("ffa"); }}
               title={p.description}
               className="rounded border-2 border-border bg-muted px-2 py-1 text-left text-[8px] hover:brightness-125 disabled:opacity-40 sm:text-[10px]">
               <div className="text-primary">{p.label}</div>
