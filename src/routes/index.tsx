@@ -1861,6 +1861,7 @@ function Battle(props: {
                   touchAction: "none",
                   filter: m.hitFlash ? "brightness(2.4) saturate(0)"
                     : evolving ? "drop-shadow(0 0 18px #fff8b0) drop-shadow(0 0 8px #ffe066) brightness(1.5) saturate(1.4)"
+                    : m.shiny ? `drop-shadow(0 0 8px #ffd83a) drop-shadow(0 0 4px #fff) hue-rotate(25deg) saturate(1.3)`
                     : `drop-shadow(0 0 6px ${d.color})`,
                   transition: "filter 120ms",
                 }}>
@@ -1878,8 +1879,8 @@ function Battle(props: {
                   style={{ width: size, height: size, imageRendering: "pixelated", objectFit: "contain" }} />
                 {!fainted && (
                   <>
-                    <span className="mt-0.5 rounded bg-black/70 px-1 text-[7px]" style={{ color: d.color }}>
-                      {d.isMega ? "⚡" : d.isGmax ? "🌀" : ""}{d.name}
+                    <span className="mt-0.5 rounded bg-black/70 px-1 text-[7px]" style={{ color: m.shiny ? "#ffd83a" : d.color }}>
+                      {m.shiny ? "✨" : ""}{d.isMega ? "⚡" : d.isGmax ? "🌀" : ""}{d.name}
                     </span>
                     <div className="mt-0.5 h-1 w-14 overflow-hidden rounded bg-black/60">
                       <div className="h-full" style={{ width: `${(m.hp / m.maxHp) * 100}%`, background: m.hp > m.maxHp * 0.4 ? "#62e07a" : "#ff5566" }} />
@@ -1890,12 +1891,18 @@ function Battle(props: {
             );
           })}
 
-          {popsRef.current.map((p) => (
-            <span key={p.id} className="dmg-pop pointer-events-none absolute text-[10px] sm:text-xs"
-              style={{ left: `${(p.x / ARENA_W) * 100}%`, top: `${(p.y / ARENA_H) * 100}%`, color: p.color }}>
-              -{p.value}{p.crit ? "!" : ""}
-            </span>
-          ))}
+          {popsRef.current.map((p) => {
+            const label = p.value === 0
+              ? (p.color === "#ffd83a" ? "SUPER!" : p.color === "#ff7777" ? "NO EFFECT" : "resisted")
+              : `-${p.value}${p.crit ? "!" : ""}`;
+            return (
+              <span key={p.id} className="dmg-pop pointer-events-none absolute text-[10px] sm:text-xs"
+                style={{ left: `${(p.x / ARENA_W) * 100}%`, top: `${(p.y / ARENA_H) * 100}%`, color: p.color }}>
+                {label}
+              </span>
+            );
+          })}
+
         </div>
 
         {status === "ended" && (
