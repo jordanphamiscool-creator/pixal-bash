@@ -2325,20 +2325,28 @@ function CatchGym({ onClose, onChallengeGym }: {
               <span className="text-[7px] text-muted-foreground sm:text-[9px]">{message}</span>
             </div>
             <div className="grid gap-3 sm:grid-cols-[auto_1fr]">
-              <div className="mx-auto grid" style={{ gridTemplateColumns: `repeat(${CG_SIZE}, 28px)`, gridAutoRows: "28px" }}>
+              <div className="mx-auto grid" style={{ gridTemplateColumns: `repeat(${CG_SIZE}, 22px)`, gridAutoRows: "22px" }}>
                 {CG_MAP.flatMap((row, y) => row.split("").map((t, x) => {
                   const here = pos.x === x && pos.y === y;
                   const cellPicked = pickedCells.has(`${x},${y}`);
-                  const bg = t === "T" ? "#2a5a2a" : t === "G" ? "#6bd36b" : t === "W" ? "#4ea8ff" : t === "C" ? (cellPicked ? "#8a7a55" : "#ffd83a") : "#c8b884";
+                  const trainerDone = trainersDone.has(`${x},${y}`);
+                  const bg = t === "T" ? "#2a5a2a" : t === "G" ? "#6bd36b" : t === "W" ? "#4ea8ff"
+                    : t === "C" ? (cellPicked ? "#8a7a55" : "#ffd83a")
+                    : t === "H" ? "#ff9ec7" : t === "N" ? (trainerDone ? "#a89880" : "#e8b74a") : t === "$" ? "#9be0a8"
+                    : "#c8b884";
                   return (
                     <div key={`${x},${y}`} style={{ background: bg, border: "1px solid rgba(0,0,0,0.15)", position: "relative" }}>
-                      {t === "T" && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 16, lineHeight: "28px" }}>🌲</span>}
-                      {t === "C" && !cellPicked && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 14, lineHeight: "28px" }}>◉</span>}
-                      {here && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 20, lineHeight: "28px" }}>🧑</span>}
+                      {t === "T" && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 13, lineHeight: "22px" }}>🌲</span>}
+                      {t === "C" && !cellPicked && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 12, lineHeight: "22px" }}>◉</span>}
+                      {t === "H" && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 12, lineHeight: "22px" }}>🏥</span>}
+                      {t === "N" && !trainerDone && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 12, lineHeight: "22px" }}>👤</span>}
+                      {t === "$" && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 12, lineHeight: "22px" }}>🛒</span>}
+                      {here && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 16, lineHeight: "22px" }}>🧑</span>}
                     </div>
                   );
                 }))}
               </div>
+
               {/* D-pad */}
               <div className="flex flex-col items-center justify-center gap-1">
                 <button onClick={() => move(0, -1)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">▲</button>
