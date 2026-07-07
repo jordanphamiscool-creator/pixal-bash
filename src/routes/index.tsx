@@ -2130,16 +2130,18 @@ function CatchGym({ onClose, onChallengeGym }: {
   const [beaten, setBeaten] = useState<string[]>(() => lsGet<string[]>("ppb-beaten", []));
   const [cells, setCells] = useState<number>(() => lsGet<number>("ppb-cells", 0));
   const [pickedCells, setPickedCells] = useState<Set<string>>(() => new Set(lsGet<string[]>("ppb-cells-picked", [])));
+  const [trainersDone, setTrainersDone] = useState<Set<string>>(() => new Set(lsGet<string[]>("ppb-trainers", [])));
   const [pos, setPos] = useState<{ x: number; y: number }>({ x: 4, y: 4 });
   const [encounter, setEncounter] = useState<Encounter | null>(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string>("Use the arrow keys or D-pad to walk. Step in the grass to find Pokémon!");
+  const [message, setMessage] = useState<string>("Use the arrow keys or D-pad to walk. Step in the grass to find Pokémon! Look for 🏥 Heal Center, 👤 Trainers, and 🛒 Shop.");
 
   useEffect(() => { if (starter !== null) localStorage.setItem("ppb-starter", String(starter)); }, [starter]);
   useEffect(() => { lsSet("ppb-team", caught); }, [caught]);
   useEffect(() => { lsSet("ppb-beaten", beaten); }, [beaten]);
   useEffect(() => { lsSet("ppb-cells", cells); }, [cells]);
   useEffect(() => { lsSet("ppb-cells-picked", Array.from(pickedCells)); }, [pickedCells]);
+  useEffect(() => { lsSet("ppb-trainers", Array.from(trainersDone)); }, [trainersDone]);
 
   const [playerMon, setPlayerMon] = useState<MonData | null>(null);
   useEffect(() => {
@@ -2154,9 +2156,11 @@ function CatchGym({ onClose, onChallengeGym }: {
     return t;
   }, [starter, caught]);
 
+  const dexPct = Math.min(100, Math.round((new Set([...caught, ...(starter !== null ? [starter] : [])]).size / 151) * 100));
+
   const tileAt = (x: number, y: number) => CG_MAP[y]?.[x] ?? "T";
 
-  const pickStarter = (id: number) => { setStarter(id); setCaught([]); setBeaten([]); setCells(0); setPickedCells(new Set()); };
+  const pickStarter = (id: number) => { setStarter(id); setCaught([]); setBeaten([]); setCells(0); setPickedCells(new Set()); setTrainersDone(new Set()); };
 
   const triggerEncounter = useCallback(async () => {
     setBusy(true);
@@ -2171,6 +2175,21 @@ function CatchGym({ onClose, onChallengeGym }: {
     } finally { setBusy(false); }
   }, []);
 
+  const triggerTrainer = useCallback(async (nkey: string) => {
+    if (trainersDone.has(nkey)) { setMessage("This trainer already fought you. They give a friendly wave."); return; }
+    setBusy(true);
+    try {
+      // Pick a random gen-1 opponent to challenge as a mini fight
+      const id = 1 + Math.floor(Math.random() * 151);
+      const mon = await fetchMon(id, `npc-${id}-${Date.now()}`);
+      if (!mon) return;
+      const maxHp = Math.round(70 + mon.baseHp * 1.2);
+      setEncounter({ id, mon, hp: maxHp, maxHp, message: `👤 Trainer sends out ${mon.name}! Beat it for coins (no catching).` });
+      // Mark trainer as done when encounter ends by beating it — handled in attack/flee
+      (window as unknown as { __ppbTrainerKey?: string }).__ppbTrainerKey = nkey;
+    } finally { setBusy(false); }
+  }, [trainersDone]);
+
   const move = useCallback((dx: number, dy: number) => {
     if (encounter || busy) return;
     setPos((p) => {
@@ -2184,17 +2203,24 @@ function CatchGym({ onClose, onChallengeGym }: {
         setPickedCells((s) => { const n = new Set(s); n.add(nkey); return n; });
         setMessage("You picked up a Zygarde Cell! Collect 10 for a bonus.");
       }
-      if (t === "G" && Math.random() < 0.28) {
+      if (t === "H") {
+        setMessage("🏥 Heal Center: your team is fully healed!");
+      } else if (t === "$") {
+        setMessage("🛒 Shop: infinite Poké Balls stocked. (Use the main lobby Shop for items.)");
+      } else if (t === "N") {
+        void triggerTrainer(nkey);
+      } else if (t === "G" && Math.random() < 0.28) {
         setMessage("The grass rustled…");
         void triggerEncounter();
       } else if (t === "G") {
         setMessage("You stroll through the grass…");
-      } else {
+      } else if (t === "P") {
         setMessage("");
       }
       return { x: nx, y: ny };
     });
-  }, [encounter, busy, pickedCells, triggerEncounter]);
+  }, [encounter, busy, pickedCells, triggerEncounter, triggerTrainer]);
+
 
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
