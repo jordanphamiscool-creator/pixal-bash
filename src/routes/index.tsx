@@ -2241,12 +2241,22 @@ function CatchGym({ onClose, onChallengeGym }: {
     const hp = Math.max(0, encounter.hp - dmg);
     const label = eff >= 2 ? " (super effective!)" : eff <= 0.5 ? " (not very effective)" : "";
     if (hp === 0) {
-      setEncounter({ ...encounter, hp, message: `${encounter.mon.name} fainted! ${dmg} dmg${label}` });
-      setTimeout(() => setEncounter(null), 1200);
+      const trainerKey = (window as unknown as { __ppbTrainerKey?: string }).__ppbTrainerKey;
+      if (trainerKey) {
+        setTrainersDone((s) => { const n = new Set(s); n.add(trainerKey); return n; });
+        (window as unknown as { __ppbTrainerKey?: string }).__ppbTrainerKey = undefined;
+        setEncounter({ ...encounter, hp, message: `You beat the trainer! ${dmg} dmg${label} — +25 coins!` });
+        // Bump coins in localStorage directly (visible next time lobby reads)
+        try { const cur = Number(localStorage.getItem("ppb-coins") ?? "0"); localStorage.setItem("ppb-coins", String(cur + 25)); } catch {}
+      } else {
+        setEncounter({ ...encounter, hp, message: `${encounter.mon.name} fainted! ${dmg} dmg${label}` });
+      }
+      setTimeout(() => setEncounter(null), 1300);
     } else {
       setEncounter({ ...encounter, hp, message: `You dealt ${dmg} dmg${label}` });
     }
   };
+
 
   const throwBall = () => {
     if (!encounter) return;
