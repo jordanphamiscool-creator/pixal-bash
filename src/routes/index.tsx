@@ -46,6 +46,7 @@ type MonState = {
   data: MonData;
   evolveEnabled: boolean;
   plusLevel: number; // 0=base, 1=plus-evolved (when no real evo available)
+  shiny?: boolean; // 1/64 sparkle variant, +8% dmg
   morphIds?: number[]; // for Rotom-style cyclers
   morphIdx?: number;
   morphLastSwap?: number;
@@ -55,6 +56,7 @@ type Projectile = {
   from: Vec; pos: Vec; angle: number;
   color: string; dmg: number; crit: boolean; kind: AttackKind;
   bornAt: number; duration: number;
+  eff?: number; // type effectiveness of the hit
 };
 type Pop = { id: number; x: number; y: number; value: number; crit: boolean; bornAt: number; color: string };
 type LogEntry = { id: number; text: string; color: string };
