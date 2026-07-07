@@ -2296,6 +2296,7 @@ function CatchGym({ onClose, onChallengeGym }: {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <span className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">📖 Dex {dexPct}%</span>
           <span className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">◉ Cells: {cells}</span>
           <button onClick={onClose} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">← Lobby</button>
         </div>
