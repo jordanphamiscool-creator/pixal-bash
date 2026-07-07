@@ -806,11 +806,20 @@ function Game() {
           tgt.hp = Math.max(0, tgt.hp - p.dmg);
           tgt.hitFlash = now + 250;
           popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 28, value: p.dmg, crit: p.crit, bornAt: now, color: p.crit ? "#ffd83a" : "#ff5566" });
+          if (p.eff !== undefined && p.eff >= 2) {
+            popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 52, value: 0, crit: true, bornAt: now, color: "#ffd83a" });
+          } else if (p.eff !== undefined && p.eff > 0 && p.eff <= 0.5) {
+            popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 52, value: 0, crit: false, bornAt: now, color: "#9aa0a6" });
+          } else if (p.eff === 0) {
+            popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 52, value: 0, crit: false, bornAt: now, color: "#ff7777" });
+          }
           if (tgt.hp === 0) {
             pushLog(`${tgt.data.name} was knocked out!`, "var(--color-muted-foreground)");
+            if (Math.random() < 0.5) announce(`${tgt.data.name} ${KO_LINES[Math.floor(Math.random() * KO_LINES.length)]}`, "#ffd83a");
             killed = true;
           }
         }
+
       } else {
         const cur = tgt && tgt.hp > 0 ? tgt.pos : p.from;
         const e = tt * tt * (3 - 2 * tt);
