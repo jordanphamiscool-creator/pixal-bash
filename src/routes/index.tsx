@@ -559,6 +559,7 @@ function Game() {
   const [payout, setPayout] = useState<number>(0);
   const evolveMsRef = useRef(15000);
   const pickWinnerAbilityRef = useRef(false); // armed for this battle?
+  const synergyRef = useRef<Record<number, number>>({}); // team# -> dmg multiplier
 
   useEffect(() => { runningRef.current = running; }, [running]);
   useEffect(() => { modeRef.current = mode; }, [mode]);
@@ -567,6 +568,12 @@ function Game() {
   const pushLog = (text: string, color: string) => {
     setLog((l) => [{ id: idRef.current++, text, color }, ...l].slice(0, 14));
   };
+
+  // Random battle announcer commentary
+  const KO_LINES = ["is down for the count!", "hits the dirt!", "sees stars!", "faints dramatically!", "taps out!", "is out cold!"];
+  const CRIT_LINES = ["Bone-crushing hit!", "Devastating blow!", "Right in the sweet spot!", "That's gonna leave a mark!"];
+  const announce = (text: string, color: string) => pushLog(`📣 ${text}`, color);
+
 
   // ============ Combat loop (throttled render ~30fps) ============
   useEffect(() => {
