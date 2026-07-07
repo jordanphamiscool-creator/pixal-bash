@@ -990,6 +990,7 @@ function Game() {
           pos = { x: ARENA_W / 2 + Math.cos(a) * 200, y: ARENA_H / 2 + Math.sin(a) * 180 };
         }
         const maxHp = Math.round(120 + d.baseHp * 1.8);
+        const shiny = Math.random() < 1 / 64;
         return {
           pos, vel: { x: rand(-30, 30), y: rand(-30, 30) },
           hp: maxHp, maxHp, team: entry.team, data: d,
@@ -998,8 +999,24 @@ function Game() {
           evolveTimer: 0, hitFlash: 0, attackFlash: 0, evolveFlashUntil: 0,
           evolveEnabled: entry.evolve && (!!d.evolveTo || true), // also enable for plus-evolution
           plusLevel: 0,
+          shiny,
         };
       });
+
+      // Team synergy: 3+ same type on a team = +10% dmg, 5+ = +18%
+      const synergy: Record<number, number> = {};
+      const teamTypes = new Map<number, Map<ElementType, number>>();
+      for (const m of mons) {
+        if (!teamTypes.has(m.team)) teamTypes.set(m.team, new Map());
+        const tm = teamTypes.get(m.team)!;
+        tm.set(m.data.type, (tm.get(m.data.type) ?? 0) + 1);
+      }
+      teamTypes.forEach((tm, team) => {
+        let best = 0;
+        tm.forEach((n) => { if (n > best) best = n; });
+        synergy[team] = best >= 5 ? 1.18 : best >= 3 ? 1.10 : 1;
+      });
+      synergyRef.current = synergy;
 
       monsRef.current = mons;
       projectilesRef.current = [];
@@ -1024,6 +1041,11 @@ function Game() {
 
       setLog([{ id: idRef.current++, text: mode === "teams" ? "Team Battle! Wipe the other team." : `${roster.length}-way Free-for-All.`, color: "var(--color-muted-foreground)" }]);
       if (battleBet.current) pushLog(`You bet ${battleBet.current.amount} coins on ${resolveBetLabel(resolvedTarget!, mons)}.`, "#ffd83a");
+      // Announce synergies + shinies
+      Object.entries(synergy).forEach(([t, mul]) => { if (mul > 1) pushLog(`✧ ${TEAM_NAMES[Number(t)] ?? `Team ${t}`} type synergy: +${Math.round((mul - 1) * 100)}% dmg`, "#ffd83a"); });
+      const shinyCount = mons.filter((m) => m.shiny).length;
+      if (shinyCount > 0) pushLog(`✨ ${shinyCount} shiny Pokémon in this battle!`, "#ffd83a");
+
 
       setStatus("fighting"); setWinnerIdx(null); setWinnerTeam(null);
       setRunning(true); setScreen("battle");
