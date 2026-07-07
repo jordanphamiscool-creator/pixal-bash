@@ -46,6 +46,7 @@ type MonState = {
   data: MonData;
   evolveEnabled: boolean;
   plusLevel: number; // 0=base, 1=plus-evolved (when no real evo available)
+  shiny?: boolean; // 1/64 sparkle variant, +8% dmg
   morphIds?: number[]; // for Rotom-style cyclers
   morphIdx?: number;
   morphLastSwap?: number;
@@ -55,6 +56,7 @@ type Projectile = {
   from: Vec; pos: Vec; angle: number;
   color: string; dmg: number; crit: boolean; kind: AttackKind;
   bornAt: number; duration: number;
+  eff?: number; // type effectiveness of the hit
 };
 type Pop = { id: number; x: number; y: number; value: number; crit: boolean; bornAt: number; color: string };
 type LogEntry = { id: number; text: string; color: string };
@@ -557,6 +559,7 @@ function Game() {
   const [payout, setPayout] = useState<number>(0);
   const evolveMsRef = useRef(15000);
   const pickWinnerAbilityRef = useRef(false); // armed for this battle?
+  const synergyRef = useRef<Record<number, number>>({}); // team# -> dmg multiplier
 
   useEffect(() => { runningRef.current = running; }, [running]);
   useEffect(() => { modeRef.current = mode; }, [mode]);
@@ -565,6 +568,12 @@ function Game() {
   const pushLog = (text: string, color: string) => {
     setLog((l) => [{ id: idRef.current++, text, color }, ...l].slice(0, 14));
   };
+
+  // Random battle announcer commentary
+  const KO_LINES = ["is down for the count!", "hits the dirt!", "sees stars!", "faints dramatically!", "taps out!", "is out cold!"];
+  const CRIT_LINES = ["Bone-crushing hit!", "Devastating blow!", "Right in the sweet spot!", "That's gonna leave a mark!"];
+  const announce = (text: string, color: string) => pushLog(`📣 ${text}`, color);
+
 
   // ============ Combat loop (throttled render ~30fps) ============
   useEffect(() => {
@@ -734,6 +743,8 @@ function Game() {
 
       // Form-based damage multipliers
       const formMul = d.isGmax ? 1.7 : d.isMega ? 1.6 : (m.plusLevel > 0 ? 1.0 : 1.0); // plus already baked into stats
+      const shinyMul = m.shiny ? 1.08 : 1;
+      const synMul = synergyRef.current[m.team] ?? 1;
 
       const atkCd = Math.max(700, ABILITY_COOLDOWN_BASE * (80 / Math.max(20, d.baseSpd)));
       if (now - m.lastAttack >= atkCd && dist <= ATTACK_RANGE + 60) {
@@ -743,7 +754,7 @@ function Game() {
         const eff = typeMult(d.type, t.data.type);
         const atkMul = 0.7 + 0.6 * (d.baseAtk / 100);
         const defReduction = 1 - Math.min(0.55, t.data.baseDef / 360);
-        const dmg = Math.max(1, Math.round(d.basic.dmg * atkMul * formMul * (crit ? 1.5 : 1) * eff * defReduction * (0.75 + Math.random() * 0.5)));
+        const dmg = Math.max(1, Math.round(d.basic.dmg * atkMul * formMul * shinyMul * synMul * (crit ? 1.5 : 1) * eff * defReduction * (0.75 + Math.random() * 0.5)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
         if (projectilesRef.current.length < 40) {
           projectilesRef.current.push({
@@ -751,9 +762,11 @@ function Game() {
             from: { ...m.pos }, pos: { ...m.pos }, angle: ang,
             color: d.color, dmg, crit, kind: d.basic.kind, bornAt: now,
             duration: d.basic.kind === "lightning" ? 200 : 420,
+            eff,
           });
         }
         pushLog(`${d.name} → ${t.data.name}: ${d.basic.name} ${crit ? "CRIT " : ""}${dmg}${effLabel(eff)}`, d.color);
+        if (crit && Math.random() < 0.4) announce(CRIT_LINES[Math.floor(Math.random() * CRIT_LINES.length)], "#ffd83a");
       }
 
       if (now - m.lastSpecial >= SPECIAL_COOLDOWN_BASE && dist <= ATTACK_RANGE + 120) {
@@ -763,7 +776,7 @@ function Game() {
         const eff = typeMult(d.type, t.data.type);
         const atkMul = 0.8 + 0.6 * (d.baseAtk / 100);
         const defReduction = 1 - Math.min(0.5, t.data.baseDef / 380);
-        const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * formMul * (crit ? 1.7 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
+        const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * formMul * shinyMul * synMul * (crit ? 1.7 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
         if (projectilesRef.current.length < 40) {
           projectilesRef.current.push({
@@ -771,6 +784,7 @@ function Game() {
             from: { ...m.pos }, pos: { ...m.pos }, angle: ang,
             color: d.color, dmg, crit, kind: d.signature.kind, bornAt: now,
             duration: d.signature.kind === "lightning" ? 240 : 500,
+            eff,
           });
         }
         pushLog(`★ ${d.name} unleashed ${d.signature.name}! ${crit ? "CRIT " : ""}${dmg}${effLabel(eff)}`, d.color);
@@ -780,6 +794,7 @@ function Game() {
       if (m.hitFlash && now > m.hitFlash) m.hitFlash = 0;
       if (m.attackFlash && now > m.attackFlash) m.attackFlash = 0;
     });
+
 
     const remaining: Projectile[] = [];
     let killed = false;
@@ -791,11 +806,20 @@ function Game() {
           tgt.hp = Math.max(0, tgt.hp - p.dmg);
           tgt.hitFlash = now + 250;
           popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 28, value: p.dmg, crit: p.crit, bornAt: now, color: p.crit ? "#ffd83a" : "#ff5566" });
+          if (p.eff !== undefined && p.eff >= 2) {
+            popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 52, value: 0, crit: true, bornAt: now, color: "#ffd83a" });
+          } else if (p.eff !== undefined && p.eff > 0 && p.eff <= 0.5) {
+            popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 52, value: 0, crit: false, bornAt: now, color: "#9aa0a6" });
+          } else if (p.eff === 0) {
+            popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 52, value: 0, crit: false, bornAt: now, color: "#ff7777" });
+          }
           if (tgt.hp === 0) {
             pushLog(`${tgt.data.name} was knocked out!`, "var(--color-muted-foreground)");
+            if (Math.random() < 0.5) announce(`${tgt.data.name} ${KO_LINES[Math.floor(Math.random() * KO_LINES.length)]}`, "#ffd83a");
             killed = true;
           }
         }
+
       } else {
         const cur = tgt && tgt.hp > 0 ? tgt.pos : p.from;
         const e = tt * tt * (3 - 2 * tt);
@@ -966,6 +990,7 @@ function Game() {
           pos = { x: ARENA_W / 2 + Math.cos(a) * 200, y: ARENA_H / 2 + Math.sin(a) * 180 };
         }
         const maxHp = Math.round(120 + d.baseHp * 1.8);
+        const shiny = Math.random() < 1 / 64;
         return {
           pos, vel: { x: rand(-30, 30), y: rand(-30, 30) },
           hp: maxHp, maxHp, team: entry.team, data: d,
@@ -974,8 +999,24 @@ function Game() {
           evolveTimer: 0, hitFlash: 0, attackFlash: 0, evolveFlashUntil: 0,
           evolveEnabled: entry.evolve && (!!d.evolveTo || true), // also enable for plus-evolution
           plusLevel: 0,
+          shiny,
         };
       });
+
+      // Team synergy: 3+ same type on a team = +10% dmg, 5+ = +18%
+      const synergy: Record<number, number> = {};
+      const teamTypes = new Map<number, Map<ElementType, number>>();
+      for (const m of mons) {
+        if (!teamTypes.has(m.team)) teamTypes.set(m.team, new Map());
+        const tm = teamTypes.get(m.team)!;
+        tm.set(m.data.type, (tm.get(m.data.type) ?? 0) + 1);
+      }
+      teamTypes.forEach((tm, team) => {
+        let best = 0;
+        tm.forEach((n) => { if (n > best) best = n; });
+        synergy[team] = best >= 5 ? 1.18 : best >= 3 ? 1.10 : 1;
+      });
+      synergyRef.current = synergy;
 
       monsRef.current = mons;
       projectilesRef.current = [];
@@ -1000,6 +1041,11 @@ function Game() {
 
       setLog([{ id: idRef.current++, text: mode === "teams" ? "Team Battle! Wipe the other team." : `${roster.length}-way Free-for-All.`, color: "var(--color-muted-foreground)" }]);
       if (battleBet.current) pushLog(`You bet ${battleBet.current.amount} coins on ${resolveBetLabel(resolvedTarget!, mons)}.`, "#ffd83a");
+      // Announce synergies + shinies
+      Object.entries(synergy).forEach(([t, mul]) => { if (mul > 1) pushLog(`✧ ${TEAM_NAMES[Number(t)] ?? `Team ${t}`} type synergy: +${Math.round((mul - 1) * 100)}% dmg`, "#ffd83a"); });
+      const shinyCount = mons.filter((m) => m.shiny).length;
+      if (shinyCount > 0) pushLog(`✨ ${shinyCount} shiny Pokémon in this battle!`, "#ffd83a");
+
 
       setStatus("fighting"); setWinnerIdx(null); setWinnerTeam(null);
       setRunning(true); setScreen("battle");
@@ -1815,6 +1861,7 @@ function Battle(props: {
                   touchAction: "none",
                   filter: m.hitFlash ? "brightness(2.4) saturate(0)"
                     : evolving ? "drop-shadow(0 0 18px #fff8b0) drop-shadow(0 0 8px #ffe066) brightness(1.5) saturate(1.4)"
+                    : m.shiny ? `drop-shadow(0 0 8px #ffd83a) drop-shadow(0 0 4px #fff) hue-rotate(25deg) saturate(1.3)`
                     : `drop-shadow(0 0 6px ${d.color})`,
                   transition: "filter 120ms",
                 }}>
@@ -1832,8 +1879,8 @@ function Battle(props: {
                   style={{ width: size, height: size, imageRendering: "pixelated", objectFit: "contain" }} />
                 {!fainted && (
                   <>
-                    <span className="mt-0.5 rounded bg-black/70 px-1 text-[7px]" style={{ color: d.color }}>
-                      {d.isMega ? "⚡" : d.isGmax ? "🌀" : ""}{d.name}
+                    <span className="mt-0.5 rounded bg-black/70 px-1 text-[7px]" style={{ color: m.shiny ? "#ffd83a" : d.color }}>
+                      {m.shiny ? "✨" : ""}{d.isMega ? "⚡" : d.isGmax ? "🌀" : ""}{d.name}
                     </span>
                     <div className="mt-0.5 h-1 w-14 overflow-hidden rounded bg-black/60">
                       <div className="h-full" style={{ width: `${(m.hp / m.maxHp) * 100}%`, background: m.hp > m.maxHp * 0.4 ? "#62e07a" : "#ff5566" }} />
@@ -1844,12 +1891,18 @@ function Battle(props: {
             );
           })}
 
-          {popsRef.current.map((p) => (
-            <span key={p.id} className="dmg-pop pointer-events-none absolute text-[10px] sm:text-xs"
-              style={{ left: `${(p.x / ARENA_W) * 100}%`, top: `${(p.y / ARENA_H) * 100}%`, color: p.color }}>
-              -{p.value}{p.crit ? "!" : ""}
-            </span>
-          ))}
+          {popsRef.current.map((p) => {
+            const label = p.value === 0
+              ? (p.color === "#ffd83a" ? "SUPER!" : p.color === "#ff7777" ? "NO EFFECT" : "resisted")
+              : `-${p.value}${p.crit ? "!" : ""}`;
+            return (
+              <span key={p.id} className="dmg-pop pointer-events-none absolute text-[10px] sm:text-xs"
+                style={{ left: `${(p.x / ARENA_W) * 100}%`, top: `${(p.y / ARENA_H) * 100}%`, color: p.color }}>
+                {label}
+              </span>
+            );
+          })}
+
         </div>
 
         {status === "ended" && (
@@ -2040,20 +2093,27 @@ const GYM_LEADERS: { id: string; name: string; type: string; team: number[]; rew
   { id: "giovanni", name: "Giovanni — Ground", type: "ground", team: [51, 31, 34], reward: 220 },
 ];
 
-// Deterministic tile map: G = grass (encounter), P = path, T = tree, C = cell, W = water
+// Deterministic tile map: G = grass (encounter), P = path, T = tree, C = cell,
+// W = water, H = heal center, N = NPC trainer (one-shot coin reward), $ = shop
 const CG_MAP: string[] = [
-  "TTTTTTTTTT",
-  "TPPPPGGGGT",
-  "TPTPPGGCGT",
-  "TPTTPGGGGT",
-  "TPPPPPPPPT",
-  "TGGCGPTPPT",
-  "TGGGGPTPCT",
-  "TGGGGPPPPT",
-  "TTTGGCPTTT",
-  "TTTTTTTTTT",
+  "TTTTTTTTTTTTTTT",
+  "TPPPPGGGGGGGGGT",
+  "TPTPPGGGCGGGNGT",
+  "TPTTPGGGGGGGGGT",
+  "TPPPPPPPPPPGGGT",
+  "THPPGGGCGPPWWWT",
+  "TPPPGGGGGPPWCWT",
+  "TPTPGGGGGPPWWWT",
+  "TPTPGGCGGPPPPPT",
+  "TPPPGGGGGPPTNPT",
+  "TGGGGGGGGGGTTPT",
+  "TGGCGGGGNGGPPPT",
+  "TGGGGGGGGGGPP$T",
+  "TGGGGGGGGGGGGGT",
+  "TTTTTTTTTTTTTTT",
 ];
-const CG_SIZE = 10;
+const CG_SIZE = 15;
+
 
 type Encounter = { id: number; mon: MonData; hp: number; maxHp: number; message: string };
 
@@ -2070,16 +2130,18 @@ function CatchGym({ onClose, onChallengeGym }: {
   const [beaten, setBeaten] = useState<string[]>(() => lsGet<string[]>("ppb-beaten", []));
   const [cells, setCells] = useState<number>(() => lsGet<number>("ppb-cells", 0));
   const [pickedCells, setPickedCells] = useState<Set<string>>(() => new Set(lsGet<string[]>("ppb-cells-picked", [])));
+  const [trainersDone, setTrainersDone] = useState<Set<string>>(() => new Set(lsGet<string[]>("ppb-trainers", [])));
   const [pos, setPos] = useState<{ x: number; y: number }>({ x: 4, y: 4 });
   const [encounter, setEncounter] = useState<Encounter | null>(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string>("Use the arrow keys or D-pad to walk. Step in the grass to find Pokémon!");
+  const [message, setMessage] = useState<string>("Use the arrow keys or D-pad to walk. Step in the grass to find Pokémon! Look for 🏥 Heal Center, 👤 Trainers, and 🛒 Shop.");
 
   useEffect(() => { if (starter !== null) localStorage.setItem("ppb-starter", String(starter)); }, [starter]);
   useEffect(() => { lsSet("ppb-team", caught); }, [caught]);
   useEffect(() => { lsSet("ppb-beaten", beaten); }, [beaten]);
   useEffect(() => { lsSet("ppb-cells", cells); }, [cells]);
   useEffect(() => { lsSet("ppb-cells-picked", Array.from(pickedCells)); }, [pickedCells]);
+  useEffect(() => { lsSet("ppb-trainers", Array.from(trainersDone)); }, [trainersDone]);
 
   const [playerMon, setPlayerMon] = useState<MonData | null>(null);
   useEffect(() => {
@@ -2094,9 +2156,11 @@ function CatchGym({ onClose, onChallengeGym }: {
     return t;
   }, [starter, caught]);
 
+  const dexPct = Math.min(100, Math.round((new Set([...caught, ...(starter !== null ? [starter] : [])]).size / 151) * 100));
+
   const tileAt = (x: number, y: number) => CG_MAP[y]?.[x] ?? "T";
 
-  const pickStarter = (id: number) => { setStarter(id); setCaught([]); setBeaten([]); setCells(0); setPickedCells(new Set()); };
+  const pickStarter = (id: number) => { setStarter(id); setCaught([]); setBeaten([]); setCells(0); setPickedCells(new Set()); setTrainersDone(new Set()); };
 
   const triggerEncounter = useCallback(async () => {
     setBusy(true);
@@ -2111,6 +2175,21 @@ function CatchGym({ onClose, onChallengeGym }: {
     } finally { setBusy(false); }
   }, []);
 
+  const triggerTrainer = useCallback(async (nkey: string) => {
+    if (trainersDone.has(nkey)) { setMessage("This trainer already fought you. They give a friendly wave."); return; }
+    setBusy(true);
+    try {
+      // Pick a random gen-1 opponent to challenge as a mini fight
+      const id = 1 + Math.floor(Math.random() * 151);
+      const mon = await fetchMon(id, `npc-${id}-${Date.now()}`);
+      if (!mon) return;
+      const maxHp = Math.round(70 + mon.baseHp * 1.2);
+      setEncounter({ id, mon, hp: maxHp, maxHp, message: `👤 Trainer sends out ${mon.name}! Beat it for coins (no catching).` });
+      // Mark trainer as done when encounter ends by beating it — handled in attack/flee
+      (window as unknown as { __ppbTrainerKey?: string }).__ppbTrainerKey = nkey;
+    } finally { setBusy(false); }
+  }, [trainersDone]);
+
   const move = useCallback((dx: number, dy: number) => {
     if (encounter || busy) return;
     setPos((p) => {
@@ -2124,17 +2203,24 @@ function CatchGym({ onClose, onChallengeGym }: {
         setPickedCells((s) => { const n = new Set(s); n.add(nkey); return n; });
         setMessage("You picked up a Zygarde Cell! Collect 10 for a bonus.");
       }
-      if (t === "G" && Math.random() < 0.28) {
+      if (t === "H") {
+        setMessage("🏥 Heal Center: your team is fully healed!");
+      } else if (t === "$") {
+        setMessage("🛒 Shop: infinite Poké Balls stocked. (Use the main lobby Shop for items.)");
+      } else if (t === "N") {
+        void triggerTrainer(nkey);
+      } else if (t === "G" && Math.random() < 0.28) {
         setMessage("The grass rustled…");
         void triggerEncounter();
       } else if (t === "G") {
         setMessage("You stroll through the grass…");
-      } else {
+      } else if (t === "P") {
         setMessage("");
       }
       return { x: nx, y: ny };
     });
-  }, [encounter, busy, pickedCells, triggerEncounter]);
+  }, [encounter, busy, pickedCells, triggerEncounter, triggerTrainer]);
+
 
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
@@ -2155,12 +2241,22 @@ function CatchGym({ onClose, onChallengeGym }: {
     const hp = Math.max(0, encounter.hp - dmg);
     const label = eff >= 2 ? " (super effective!)" : eff <= 0.5 ? " (not very effective)" : "";
     if (hp === 0) {
-      setEncounter({ ...encounter, hp, message: `${encounter.mon.name} fainted! ${dmg} dmg${label}` });
-      setTimeout(() => setEncounter(null), 1200);
+      const trainerKey = (window as unknown as { __ppbTrainerKey?: string }).__ppbTrainerKey;
+      if (trainerKey) {
+        setTrainersDone((s) => { const n = new Set(s); n.add(trainerKey); return n; });
+        (window as unknown as { __ppbTrainerKey?: string }).__ppbTrainerKey = undefined;
+        setEncounter({ ...encounter, hp, message: `You beat the trainer! ${dmg} dmg${label} — +25 coins!` });
+        // Bump coins in localStorage directly (visible next time lobby reads)
+        try { const cur = Number(localStorage.getItem("ppb-coins") ?? "0"); localStorage.setItem("ppb-coins", String(cur + 25)); } catch {}
+      } else {
+        setEncounter({ ...encounter, hp, message: `${encounter.mon.name} fainted! ${dmg} dmg${label}` });
+      }
+      setTimeout(() => setEncounter(null), 1300);
     } else {
       setEncounter({ ...encounter, hp, message: `You dealt ${dmg} dmg${label}` });
     }
   };
+
 
   const throwBall = () => {
     if (!encounter) return;
@@ -2200,6 +2296,7 @@ function CatchGym({ onClose, onChallengeGym }: {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <span className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">📖 Dex {dexPct}%</span>
           <span className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">◉ Cells: {cells}</span>
           <button onClick={onClose} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">← Lobby</button>
         </div>
@@ -2229,20 +2326,28 @@ function CatchGym({ onClose, onChallengeGym }: {
               <span className="text-[7px] text-muted-foreground sm:text-[9px]">{message}</span>
             </div>
             <div className="grid gap-3 sm:grid-cols-[auto_1fr]">
-              <div className="mx-auto grid" style={{ gridTemplateColumns: `repeat(${CG_SIZE}, 28px)`, gridAutoRows: "28px" }}>
+              <div className="mx-auto grid" style={{ gridTemplateColumns: `repeat(${CG_SIZE}, 22px)`, gridAutoRows: "22px" }}>
                 {CG_MAP.flatMap((row, y) => row.split("").map((t, x) => {
                   const here = pos.x === x && pos.y === y;
                   const cellPicked = pickedCells.has(`${x},${y}`);
-                  const bg = t === "T" ? "#2a5a2a" : t === "G" ? "#6bd36b" : t === "W" ? "#4ea8ff" : t === "C" ? (cellPicked ? "#8a7a55" : "#ffd83a") : "#c8b884";
+                  const trainerDone = trainersDone.has(`${x},${y}`);
+                  const bg = t === "T" ? "#2a5a2a" : t === "G" ? "#6bd36b" : t === "W" ? "#4ea8ff"
+                    : t === "C" ? (cellPicked ? "#8a7a55" : "#ffd83a")
+                    : t === "H" ? "#ff9ec7" : t === "N" ? (trainerDone ? "#a89880" : "#e8b74a") : t === "$" ? "#9be0a8"
+                    : "#c8b884";
                   return (
                     <div key={`${x},${y}`} style={{ background: bg, border: "1px solid rgba(0,0,0,0.15)", position: "relative" }}>
-                      {t === "T" && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 16, lineHeight: "28px" }}>🌲</span>}
-                      {t === "C" && !cellPicked && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 14, lineHeight: "28px" }}>◉</span>}
-                      {here && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 20, lineHeight: "28px" }}>🧑</span>}
+                      {t === "T" && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 13, lineHeight: "22px" }}>🌲</span>}
+                      {t === "C" && !cellPicked && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 12, lineHeight: "22px" }}>◉</span>}
+                      {t === "H" && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 12, lineHeight: "22px" }}>🏥</span>}
+                      {t === "N" && !trainerDone && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 12, lineHeight: "22px" }}>👤</span>}
+                      {t === "$" && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 12, lineHeight: "22px" }}>🛒</span>}
+                      {here && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 16, lineHeight: "22px" }}>🧑</span>}
                     </div>
                   );
                 }))}
               </div>
+
               {/* D-pad */}
               <div className="flex flex-col items-center justify-center gap-1">
                 <button onClick={() => move(0, -1)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">▲</button>
