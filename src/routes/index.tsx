@@ -2093,20 +2093,27 @@ const GYM_LEADERS: { id: string; name: string; type: string; team: number[]; rew
   { id: "giovanni", name: "Giovanni — Ground", type: "ground", team: [51, 31, 34], reward: 220 },
 ];
 
-// Deterministic tile map: G = grass (encounter), P = path, T = tree, C = cell, W = water
+// Deterministic tile map: G = grass (encounter), P = path, T = tree, C = cell,
+// W = water, H = heal center, N = NPC trainer (one-shot coin reward), $ = shop
 const CG_MAP: string[] = [
-  "TTTTTTTTTT",
-  "TPPPPGGGGT",
-  "TPTPPGGCGT",
-  "TPTTPGGGGT",
-  "TPPPPPPPPT",
-  "TGGCGPTPPT",
-  "TGGGGPTPCT",
-  "TGGGGPPPPT",
-  "TTTGGCPTTT",
-  "TTTTTTTTTT",
+  "TTTTTTTTTTTTTTT",
+  "TPPPPGGGGGGGGGT",
+  "TPTPPGGGCGGGNGT",
+  "TPTTPGGGGGGGGGT",
+  "TPPPPPPPPPPGGGT",
+  "THPPGGGCGPPWWWT",
+  "TPPPGGGGGPPWCWT",
+  "TPTPGGGGGPPWWWT",
+  "TPTPGGCGGPPPPPT",
+  "TPPPGGGGGPPTNPT",
+  "TGGGGGGGGGGTTPT",
+  "TGGCGGGGNGGPPPT",
+  "TGGGGGGGGGGPP$T",
+  "TGGGGGGGGGGGGGT",
+  "TTTTTTTTTTTTTTT",
 ];
-const CG_SIZE = 10;
+const CG_SIZE = 15;
+
 
 type Encounter = { id: number; mon: MonData; hp: number; maxHp: number; message: string };
 
