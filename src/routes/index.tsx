@@ -2084,14 +2084,45 @@ const STARTER_OPTIONS: { id: number; name: string; type: string }[] = [
   { id: 25, name: "Pikachu", type: "electric" },
   { id: 133, name: "Eevee", type: "normal" },
 ];
-const GYM_LEADERS: { id: string; name: string; type: string; team: number[]; reward: number }[] = [
-  { id: "brock", name: "Brock — Rock", type: "rock", team: [74, 95, 76], reward: 60 },
-  { id: "misty", name: "Misty — Water", type: "water", team: [120, 121, 131], reward: 80 },
-  { id: "surge", name: "Lt. Surge — Electric", type: "electric", team: [100, 25, 26], reward: 100 },
-  { id: "erika", name: "Erika — Grass", type: "grass", team: [71, 114, 45], reward: 120 },
-  { id: "sabrina", name: "Sabrina — Psychic", type: "psychic", team: [64, 122, 65], reward: 160 },
-  { id: "giovanni", name: "Giovanni — Ground", type: "ground", team: [51, 31, 34], reward: 220 },
+const GYM_LEADERS: { id: string; name: string; type: string; team: number[]; reward: number; perk: string; quiz: { q: string; a: string; choices: string[] } }[] = [
+  { id: "brock", name: "Brock — Rock", type: "rock", team: [74, 95, 76], reward: 60, perk: "Cut (chop 🌲 trees)", quiz: { q: "Rock beats which type?", a: "flying", choices: ["water","flying","grass"] } },
+  { id: "misty", name: "Misty — Water", type: "water", team: [120, 121, 131], reward: 80, perk: "Surf (walk on 🌊 water)", quiz: { q: "Water is weak to?", a: "electric", choices: ["fire","electric","normal"] } },
+  { id: "surge", name: "Lt. Surge — Electric", type: "electric", team: [100, 25, 26], reward: 100, perk: "Repel free once/day", quiz: { q: "Electric can't hit?", a: "ground", choices: ["ground","flying","fire"] } },
+  { id: "erika", name: "Erika — Grass", type: "grass", team: [71, 114, 45], reward: 120, perk: "Strength (push 🪨 boulders)", quiz: { q: "Grass resists?", a: "water", choices: ["fire","water","bug"] } },
+  { id: "koga", name: "Koga — Poison", type: "poison", team: [49, 89, 169], reward: 140, perk: "+10% catch rate", quiz: { q: "Poison beats?", a: "grass", choices: ["grass","rock","steel"] } },
+  { id: "sabrina", name: "Sabrina — Psychic", type: "psychic", team: [64, 122, 65], reward: 160, perk: "See hidden items ✨", quiz: { q: "Psychic fears?", a: "dark", choices: ["dark","fire","water"] } },
+  { id: "blaine", name: "Blaine — Fire", type: "fire", team: [59, 78, 146], reward: 190, perk: "Fly (fast travel to 🏥)", quiz: { q: "Fire beats?", a: "grass", choices: ["water","grass","rock"] } },
+  { id: "giovanni", name: "Giovanni — Ground", type: "ground", team: [51, 31, 34], reward: 220, perk: "Unlocks Elite Four", quiz: { q: "Ground is weak to?", a: "water", choices: ["water","fire","normal"] } },
 ];
+const ELITE_FOUR: { id: string; name: string; type: string; team: number[] }[] = [
+  { id: "lorelei", name: "Lorelei — Ice", type: "ice", team: [87, 91, 124] },
+  { id: "bruno", name: "Bruno — Fighting", type: "fighting", team: [95, 107, 68] },
+  { id: "agatha", name: "Agatha — Ghost", type: "ghost", team: [94, 42, 24] },
+  { id: "lance", name: "Lance — Dragon", type: "dragon", team: [130, 149, 142] },
+];
+// Water-type pool for fishing, bug/flying for headbutt, cave pool for cave zone
+const WATER_POOL = [7, 54, 60, 72, 79, 86, 90, 98, 116, 118, 120, 129, 131, 138, 147];
+const BUG_FLY_POOL = [10, 13, 16, 21, 41, 46, 48, 123, 165, 167, 187, 191];
+const CAVE_POOL = [41, 74, 92, 95, 104, 66, 27, 111, 138, 140, 246];
+const LEGENDARY_POOL = [144, 145, 146, 150, 151, 243, 244, 245, 249, 250, 251, 384, 483, 484, 487];
+const CAVE_MAP: string[] = [
+  "TTTTTTTTTTTTTTT",
+  "TPPPPPPPPPPPPPT",
+  "TPTTPTTPTPTTPPT",
+  "TPTCPTTPTPTCPPT",
+  "TPTTPPPPPPTTPPT",
+  "TPPPPTTTPPPPPPT",
+  "TPTPPTLTPTTTPPT",
+  "TPTPPTTTPTCTPPT",
+  "TPTPPPPPPPTTPPT",
+  "TPPPPTTPPPPPPPT",
+  "TPTPPTCPTPTTPPT",
+  "TPTPPTTPTPTPPPT",
+  "TPPPPPPPPPPPPPT",
+  "TXPPPPPPPPPPPPT",
+  "TTTTTTTTTTTTTTT",
+]; // X = exit back to overworld, L = legendary sighting
+
 
 // Deterministic tile map: G = grass (encounter), P = path, T = tree, C = cell,
 // W = water, H = heal center, N = NPC trainer (one-shot coin reward), $ = shop
