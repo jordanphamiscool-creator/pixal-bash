@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -2084,38 +2084,97 @@ const STARTER_OPTIONS: { id: number; name: string; type: string }[] = [
   { id: 25, name: "Pikachu", type: "electric" },
   { id: 133, name: "Eevee", type: "normal" },
 ];
-const GYM_LEADERS: { id: string; name: string; type: string; team: number[]; reward: number }[] = [
-  { id: "brock", name: "Brock — Rock", type: "rock", team: [74, 95, 76], reward: 60 },
-  { id: "misty", name: "Misty — Water", type: "water", team: [120, 121, 131], reward: 80 },
-  { id: "surge", name: "Lt. Surge — Electric", type: "electric", team: [100, 25, 26], reward: 100 },
-  { id: "erika", name: "Erika — Grass", type: "grass", team: [71, 114, 45], reward: 120 },
-  { id: "sabrina", name: "Sabrina — Psychic", type: "psychic", team: [64, 122, 65], reward: 160 },
-  { id: "giovanni", name: "Giovanni — Ground", type: "ground", team: [51, 31, 34], reward: 220 },
+const GYM_LEADERS: { id: string; name: string; type: string; team: number[]; reward: number; perk: string; quiz: { q: string; a: string; choices: string[] } }[] = [
+  { id: "brock", name: "Brock — Rock", type: "rock", team: [74, 95, 76], reward: 60, perk: "Cut (chop 🌲 trees)", quiz: { q: "Rock beats which type?", a: "flying", choices: ["water","flying","grass"] } },
+  { id: "misty", name: "Misty — Water", type: "water", team: [120, 121, 131], reward: 80, perk: "Surf (walk on 🌊 water)", quiz: { q: "Water is weak to?", a: "electric", choices: ["fire","electric","normal"] } },
+  { id: "surge", name: "Lt. Surge — Electric", type: "electric", team: [100, 25, 26], reward: 100, perk: "Repel free once/day", quiz: { q: "Electric can't hit?", a: "ground", choices: ["ground","flying","fire"] } },
+  { id: "erika", name: "Erika — Grass", type: "grass", team: [71, 114, 45], reward: 120, perk: "Strength (push 🪨 boulders)", quiz: { q: "Grass resists?", a: "water", choices: ["fire","water","bug"] } },
+  { id: "koga", name: "Koga — Poison", type: "poison", team: [49, 89, 169], reward: 140, perk: "+10% catch rate", quiz: { q: "Poison beats?", a: "grass", choices: ["grass","rock","steel"] } },
+  { id: "sabrina", name: "Sabrina — Psychic", type: "psychic", team: [64, 122, 65], reward: 160, perk: "See hidden items ✨", quiz: { q: "Psychic fears?", a: "dark", choices: ["dark","fire","water"] } },
+  { id: "blaine", name: "Blaine — Fire", type: "fire", team: [59, 78, 146], reward: 190, perk: "Fly (fast travel to 🏥)", quiz: { q: "Fire beats?", a: "grass", choices: ["water","grass","rock"] } },
+  { id: "giovanni", name: "Giovanni — Ground", type: "ground", team: [51, 31, 34], reward: 220, perk: "Unlocks Elite Four", quiz: { q: "Ground is weak to?", a: "water", choices: ["water","fire","normal"] } },
 ];
+const ELITE_FOUR: { id: string; name: string; type: string; team: number[] }[] = [
+  { id: "lorelei", name: "Lorelei — Ice", type: "ice", team: [87, 91, 124] },
+  { id: "bruno", name: "Bruno — Fighting", type: "fighting", team: [95, 107, 68] },
+  { id: "agatha", name: "Agatha — Ghost", type: "ghost", team: [94, 42, 24] },
+  { id: "lance", name: "Lance — Dragon", type: "dragon", team: [130, 149, 142] },
+];
+// Water-type pool for fishing, bug/flying for headbutt, cave pool for cave zone
+const WATER_POOL = [7, 54, 60, 72, 79, 86, 90, 98, 116, 118, 120, 129, 131, 138, 147];
+const BUG_FLY_POOL = [10, 13, 16, 21, 41, 46, 48, 123, 165, 167, 187, 191];
+const CAVE_POOL = [41, 74, 92, 95, 104, 66, 27, 111, 138, 140, 246];
+const LEGENDARY_POOL = [144, 145, 146, 150, 151, 243, 244, 245, 249, 250, 251, 384, 483, 484, 487];
+const CAVE_MAP: string[] = [
+  "TTTTTTTTTTTTTTT",
+  "TPPPPPPPPPPPPPT",
+  "TPTTPTTPTPTTPPT",
+  "TPTCPTTPTPTCPPT",
+  "TPTTPPPPPPTTPPT",
+  "TPPPPTTTPPPPPPT",
+  "TPTPPTLTPTTTPPT",
+  "TPTPPTTTPTCTPPT",
+  "TPTPPPPPPPTTPPT",
+  "TPPPPTTPPPPPPPT",
+  "TPTPPTCPTPTTPPT",
+  "TPTPPTTPTPTPPPT",
+  "TPPPPPPPPPPPPPT",
+  "TXPPPPPPPPPPPPT",
+  "TTTTTTTTTTTTTTT",
+]; // X = exit back to overworld, L = legendary sighting
 
-// Deterministic tile map: G = grass (encounter), P = path, T = tree, C = cell,
-// W = water, H = heal center, N = NPC trainer (one-shot coin reward), $ = shop
+
+// Overworld tiles: G grass, P path, T tree, C cell, W water (fish), H heal,
+// N trainer, $ shop, B berry tree, K boulder (needs Strength), X cave entrance,
+// D dojo (EV), M move tutor, R nurse revive quest, U wonder trade, F pc box
 const CG_MAP: string[] = [
   "TTTTTTTTTTTTTTT",
   "TPPPPGGGGGGGGGT",
   "TPTPPGGGCGGGNGT",
-  "TPTTPGGGGGGGGGT",
+  "TPTTPGGGGBGGGGT",
   "TPPPPPPPPPPGGGT",
   "THPPGGGCGPPWWWT",
-  "TPPPGGGGGPPWCWT",
-  "TPTPGGGGGPPWWWT",
-  "TPTPGGCGGPPPPPT",
+  "TFPPGGGGGPPWCWT",
+  "TDPPGGGGGPPWWWT",
+  "TMPPGGCGGPKPPPT",
   "TPPPGGGGGPPTNPT",
-  "TGGGGGGGGGGTTPT",
+  "TGGGGGRGGGGTTPT",
   "TGGCGGGGNGGPPPT",
   "TGGGGGGGGGGPP$T",
-  "TGGGGGGGGGGGGGT",
+  "TGGUGGGBGGGGGXT",
   "TTTTTTTTTTTTTTT",
 ];
 const CG_SIZE = 15;
 
+type Encounter = {
+  id: number;
+  mon: MonData;
+  hp: number;
+  maxHp: number;
+  message: string;
+  kind: "wild" | "trainer" | "legendary" | "champion";
+  trainerKey?: string;
+};
+type Inventory = {
+  bike: boolean;
+  repel: number; // steps left
+  berries: number;
+  potions: number;
+  cutBadge: boolean;
+  surfBadge: boolean;
+  strengthBadge: boolean;
+  flyBadge: boolean;
+  seeBadge: boolean;
+  catchBadge: boolean;
+  repelBadge: boolean;
+  eliteUnlocked: boolean;
+};
 
-type Encounter = { id: number; mon: MonData; hp: number; maxHp: number; message: string };
+const DEFAULT_INV: Inventory = {
+  bike: false, repel: 0, berries: 0, potions: 0,
+  cutBadge: false, surfBadge: false, strengthBadge: false, flyBadge: false,
+  seeBadge: false, catchBadge: false, repelBadge: false, eliteUnlocked: false,
+};
 
 function CatchGym({ onClose, onChallengeGym }: {
   onClose: () => void;
@@ -2127,21 +2186,119 @@ function CatchGym({ onClose, onChallengeGym }: {
     return v ? Number(v) : null;
   });
   const [caught, setCaught] = useState<number[]>(() => lsGet<number[]>("ppb-team", []));
+  const [pcBox, setPcBox] = useState<number[]>(() => lsGet<number[]>("ppb-pc", []));
   const [beaten, setBeaten] = useState<string[]>(() => lsGet<string[]>("ppb-beaten", []));
+  const [e4Beaten, setE4Beaten] = useState<string[]>(() => lsGet<string[]>("ppb-e4", []));
+  const [defenses, setDefenses] = useState<number>(() => lsGet<number>("ppb-defenses", 0));
+  const [rematchLevel, setRematchLevel] = useState<number>(() => lsGet<number>("ppb-rematch", 0));
   const [cells, setCells] = useState<number>(() => lsGet<number>("ppb-cells", 0));
   const [pickedCells, setPickedCells] = useState<Set<string>>(() => new Set(lsGet<string[]>("ppb-cells-picked", [])));
   const [trainersDone, setTrainersDone] = useState<Set<string>>(() => new Set(lsGet<string[]>("ppb-trainers", [])));
+  const [inv, setInv] = useState<Inventory>(() => ({ ...DEFAULT_INV, ...lsGet<Partial<Inventory>>("ppb-inv", {}) }));
+  const [nuzlocke, setNuzlocke] = useState<boolean>(() => lsGet<boolean>("ppb-nuz", false));
+  const [routeCaught, setRouteCaught] = useState<Set<number>>(() => new Set(lsGet<number[]>("ppb-nuz-routes", [])));
+  const [reviveDone, setReviveDone] = useState<boolean>(() => lsGet<boolean>("ppb-revive", false));
+  const [coinsView, setCoinsView] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    return Number(localStorage.getItem("ppb-coins") ?? "0");
+  });
+  const bumpCoins = (delta: number) => {
+    try {
+      const cur = Number(localStorage.getItem("ppb-coins") ?? "0");
+      const next = Math.max(0, cur + delta);
+      localStorage.setItem("ppb-coins", String(next));
+      setCoinsView(next);
+    } catch {}
+  };
+
+  const [zone, setZone] = useState<"over" | "cave">("over");
   const [pos, setPos] = useState<{ x: number; y: number }>({ x: 4, y: 4 });
   const [encounter, setEncounter] = useState<Encounter | null>(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string>("Use the arrow keys or D-pad to walk. Step in the grass to find Pokémon! Look for 🏥 Heal Center, 👤 Trainers, and 🛒 Shop.");
+  const [message, setMessage] = useState<string>("Walk with arrows / D-pad. Find 🏥 heal · 👤 trainer · 🛒 shop · 🍒 berries · 🎣 water · 🪨 boulder · 🕳 cave · 🎁 wonder · 💊 revive quest · 🥋 dojo · ✏ move tutor · 📦 PC box.");
+  const [tab, setTab] = useState<"map" | "team" | "gyms" | "shop" | "card" | "photo">("map");
 
+  // Hidden items — random tiles refresh each session
+  const hiddenItems = useMemo<Set<string>>(() => {
+    const s = new Set<string>();
+    for (let i = 0; i < 6; i++) {
+      const x = 1 + Math.floor(Math.random() * (CG_SIZE - 2));
+      const y = 1 + Math.floor(Math.random() * (CG_SIZE - 2));
+      s.add(`${x},${y}`);
+    }
+    return s;
+  }, []);
+  const [foundHidden, setFoundHidden] = useState<Set<string>>(() => new Set());
+
+  // Day/night — real clock
+  const [isNight, setIsNight] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    const h = new Date().getHours();
+    return h < 6 || h >= 19;
+  });
+  useEffect(() => {
+    const t = setInterval(() => {
+      const h = new Date().getHours();
+      setIsNight(h < 6 || h >= 19);
+    }, 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Swarm event — every ~3 min a random species surges for 90s
+  const [swarm, setSwarm] = useState<{ id: number; name: string; ends: number } | null>(null);
+  useEffect(() => {
+    const t = setInterval(async () => {
+      if (swarm && Date.now() > swarm.ends) setSwarm(null);
+      if (!swarm && Math.random() < 0.35) {
+        const id = 1 + Math.floor(Math.random() * 251);
+        const m = await fetchMon(id, `sw-${id}`);
+        if (m) setSwarm({ id, name: m.name, ends: Date.now() + 90_000 });
+      }
+    }, 60_000);
+    return () => clearInterval(t);
+  }, [swarm]);
+
+  // Roaming legendary — random moving red dot
+  const [roamer, setRoamer] = useState<{ x: number; y: number; id: number } | null>(null);
+  useEffect(() => {
+    if (zone !== "over") return;
+    if (!roamer && Math.random() < 0.5) {
+      setRoamer({
+        x: 1 + Math.floor(Math.random() * (CG_SIZE - 2)),
+        y: 1 + Math.floor(Math.random() * (CG_SIZE - 2)),
+        id: LEGENDARY_POOL[Math.floor(Math.random() * LEGENDARY_POOL.length)],
+      });
+    }
+    const t = setInterval(() => {
+      setRoamer((r) => {
+        if (!r) return r;
+        const nx = Math.max(1, Math.min(CG_SIZE - 2, r.x + (Math.floor(Math.random() * 3) - 1)));
+        const ny = Math.max(1, Math.min(CG_SIZE - 2, r.y + (Math.floor(Math.random() * 3) - 1)));
+        return { ...r, x: nx, y: ny };
+      });
+    }, 2500);
+    return () => clearInterval(t);
+  }, [zone, roamer]);
+
+  // Trophies (legendaries caught roaming)
+  const [trophies, setTrophies] = useState<number[]>(() => lsGet<number[]>("ppb-trophies", []));
+
+  // Persist everything
   useEffect(() => { if (starter !== null) localStorage.setItem("ppb-starter", String(starter)); }, [starter]);
   useEffect(() => { lsSet("ppb-team", caught); }, [caught]);
+  useEffect(() => { lsSet("ppb-pc", pcBox); }, [pcBox]);
   useEffect(() => { lsSet("ppb-beaten", beaten); }, [beaten]);
+  useEffect(() => { lsSet("ppb-e4", e4Beaten); }, [e4Beaten]);
+  useEffect(() => { lsSet("ppb-defenses", defenses); }, [defenses]);
+  useEffect(() => { lsSet("ppb-rematch", rematchLevel); }, [rematchLevel]);
   useEffect(() => { lsSet("ppb-cells", cells); }, [cells]);
   useEffect(() => { lsSet("ppb-cells-picked", Array.from(pickedCells)); }, [pickedCells]);
   useEffect(() => { lsSet("ppb-trainers", Array.from(trainersDone)); }, [trainersDone]);
+  useEffect(() => { lsSet("ppb-inv", inv); }, [inv]);
+  useEffect(() => { lsSet("ppb-nuz", nuzlocke); }, [nuzlocke]);
+  useEffect(() => { lsSet("ppb-nuz-routes", Array.from(routeCaught)); }, [routeCaught]);
+  useEffect(() => { lsSet("ppb-revive", reviveDone); }, [reviveDone]);
+  useEffect(() => { lsSet("ppb-trophies", trophies); }, [trophies]);
 
   const [playerMon, setPlayerMon] = useState<MonData | null>(null);
   useEffect(() => {
@@ -2156,71 +2313,157 @@ function CatchGym({ onClose, onChallengeGym }: {
     return t;
   }, [starter, caught]);
 
-  const dexPct = Math.min(100, Math.round((new Set([...caught, ...(starter !== null ? [starter] : [])]).size / 151) * 100));
+  const dexPct = Math.min(100, Math.round((new Set([...caught, ...pcBox, ...(starter !== null ? [starter] : [])]).size / 151) * 100));
 
-  const tileAt = (x: number, y: number) => CG_MAP[y]?.[x] ?? "T";
+  const currentMap = zone === "cave" ? CAVE_MAP : CG_MAP;
+  const tileAt = (x: number, y: number) => currentMap[y]?.[x] ?? "T";
 
-  const pickStarter = (id: number) => { setStarter(id); setCaught([]); setBeaten([]); setCells(0); setPickedCells(new Set()); setTrainersDone(new Set()); };
+  const pickStarter = (id: number) => {
+    setStarter(id); setCaught([]); setPcBox([]); setBeaten([]); setE4Beaten([]);
+    setDefenses(0); setRematchLevel(0); setCells(0); setPickedCells(new Set());
+    setTrainersDone(new Set()); setInv(DEFAULT_INV); setRouteCaught(new Set());
+    setReviveDone(false); setTrophies([]);
+  };
 
-  const triggerEncounter = useCallback(async () => {
+  const encounterSkipped = () => {
+    if (inv.repel > 0) {
+      setInv((i) => ({ ...i, repel: i.repel - 1 }));
+      setMessage(`💨 Repel active (${inv.repel - 1} steps left) — wild Pokémon avoided you.`);
+      return true;
+    }
+    return false;
+  };
+
+  const triggerEncounter = useCallback(async (pool?: number[]) => {
+    if (encounterSkipped()) return;
     setBusy(true);
     try {
-      // Wider pool than gen 1 — favor easy catches. Occasional "rare" boss (10% chance)
-      const rare = Math.random() < 0.1;
-      const id = rare ? 1 + Math.floor(Math.random() * 649) : 1 + Math.floor(Math.random() * 251);
+      const swarmActive = swarm && Math.random() < 0.5;
+      let id: number;
+      if (swarmActive && swarm) id = swarm.id;
+      else if (pool) id = pool[Math.floor(Math.random() * pool.length)];
+      else {
+        const rare = Math.random() < 0.1;
+        id = rare ? 1 + Math.floor(Math.random() * 649) : 1 + Math.floor(Math.random() * 251);
+      }
       const mon = await fetchMon(id, `wild-${id}-${Date.now()}`);
       if (!mon) return;
-      const maxHp = Math.round(60 + mon.baseHp * (rare ? 1.6 : 1));
-      setEncounter({ id, mon, hp: maxHp, maxHp, message: `A wild ${rare ? "★ " : ""}${mon.name} appeared!` });
+      const maxHp = Math.round(60 + mon.baseHp * (isNight ? 1.15 : 1));
+      setEncounter({ id, mon, hp: maxHp, maxHp, message: `A wild ${swarmActive ? "🌊 SWARM " : ""}${isNight ? "🌙 " : ""}${mon.name} appeared!`, kind: "wild" });
     } finally { setBusy(false); }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [swarm, isNight, inv.repel]);
 
   const triggerTrainer = useCallback(async (nkey: string) => {
     if (trainersDone.has(nkey)) { setMessage("This trainer already fought you. They give a friendly wave."); return; }
     setBusy(true);
     try {
-      // Pick a random gen-1 opponent to challenge as a mini fight
       const id = 1 + Math.floor(Math.random() * 151);
       const mon = await fetchMon(id, `npc-${id}-${Date.now()}`);
       if (!mon) return;
       const maxHp = Math.round(70 + mon.baseHp * 1.2);
-      setEncounter({ id, mon, hp: maxHp, maxHp, message: `👤 Trainer sends out ${mon.name}! Beat it for coins (no catching).` });
-      // Mark trainer as done when encounter ends by beating it — handled in attack/flee
-      (window as unknown as { __ppbTrainerKey?: string }).__ppbTrainerKey = nkey;
+      setEncounter({ id, mon, hp: maxHp, maxHp, message: `👤 Trainer sends out ${mon.name}! Beat it for coins.`, kind: "trainer", trainerKey: nkey });
     } finally { setBusy(false); }
   }, [trainersDone]);
 
+  const triggerLegendary = useCallback(async () => {
+    if (!roamer) return;
+    setBusy(true);
+    try {
+      const mon = await fetchMon(roamer.id, `leg-${roamer.id}-${Date.now()}`);
+      if (!mon) return;
+      const maxHp = Math.round(180 + mon.baseHp * 1.8);
+      setEncounter({ id: roamer.id, mon, hp: maxHp, maxHp, message: `❗ A ROAMING ${mon.name.toUpperCase()} appeared! Weaken it fast!`, kind: "legendary" });
+    } finally { setBusy(false); }
+  }, [roamer]);
+
   const move = useCallback((dx: number, dy: number) => {
     if (encounter || busy) return;
+    const step = inv.bike ? 2 : 1;
     setPos((p) => {
-      const nx = Math.max(0, Math.min(CG_SIZE - 1, p.x + dx));
-      const ny = Math.max(0, Math.min(CG_SIZE - 1, p.y + dy));
+      const nx = Math.max(0, Math.min(CG_SIZE - 1, p.x + dx * step));
+      const ny = Math.max(0, Math.min(CG_SIZE - 1, p.y + dy * step));
       const t = tileAt(nx, ny);
-      if (t === "T" || t === "W") return p; // blocked
+
+      // Roamer collision
+      if (roamer && roamer.x === nx && roamer.y === ny) {
+        void triggerLegendary();
+        return { x: nx, y: ny };
+      }
+
+      // Blocked tiles + HM checks
+      if (t === "T" && !inv.cutBadge) return p;
+      if (t === "T" && inv.cutBadge) { setMessage("You slashed through a small tree!"); }
+      if (t === "W" && !inv.surfBadge) { setMessage("The water is deep. You need Surf (Misty's badge)."); return p; }
+      if (t === "K" && !inv.strengthBadge) { setMessage("A boulder blocks the way. You need Strength (Erika's badge)."); return p; }
+
       const nkey = `${nx},${ny}`;
+
       if (t === "C" && !pickedCells.has(nkey)) {
         setCells((c) => c + 1);
         setPickedCells((s) => { const n = new Set(s); n.add(nkey); return n; });
         setMessage("You picked up a Zygarde Cell! Collect 10 for a bonus.");
       }
-      if (t === "H") {
-        setMessage("🏥 Heal Center: your team is fully healed!");
-      } else if (t === "$") {
-        setMessage("🛒 Shop: infinite Poké Balls stocked. (Use the main lobby Shop for items.)");
-      } else if (t === "N") {
-        void triggerTrainer(nkey);
-      } else if (t === "G" && Math.random() < 0.28) {
-        setMessage("The grass rustled…");
-        void triggerEncounter();
-      } else if (t === "G") {
-        setMessage("You stroll through the grass…");
-      } else if (t === "P") {
-        setMessage("");
+      if (hiddenItems.has(nkey) && !foundHidden.has(nkey)) {
+        setFoundHidden((s) => { const n = new Set(s); n.add(nkey); return n; });
+        const roll = Math.random();
+        if (roll < 0.4) { bumpCoins(30); setMessage("✨ Hidden item: 30 coins!"); }
+        else if (roll < 0.7) { setInv((i) => ({ ...i, potions: i.potions + 1 })); setMessage("✨ Hidden item: 1 Potion!"); }
+        else if (roll < 0.9) { setInv((i) => ({ ...i, berries: i.berries + 1 })); setMessage("✨ Hidden item: 1 Berry!"); }
+        else { setInv((i) => ({ ...i, repel: i.repel + 25 })); setMessage("✨ Hidden item: Repel (+25 steps)!"); }
       }
+
+      if (t === "H") { setMessage("🏥 Heal Center: your team is fully healed!"); }
+      else if (t === "$") { setTab("shop"); setMessage("🛒 Shop stocked — open tab below."); }
+      else if (t === "B") { setInv((i) => ({ ...i, berries: i.berries + 1 })); setMessage("🍒 You picked a berry! (Use in battle to heal.)"); }
+      else if (t === "F") { setTab("team"); setMessage("📦 PC Box opened."); }
+      else if (t === "D") {
+        if (playerMon) { setMessage(`🥋 EV Dojo: ${playerMon.name} feels stronger. (+2 permanent Atk in next battles.)`); setInv((i) => ({ ...i, potions: i.potions + 1 })); }
+        else setMessage("🥋 EV Dojo: pick a starter first.");
+      }
+      else if (t === "M") { setMessage("✏ Move Tutor: your starter learned a new signature move! (cosmetic)"); }
+      else if (t === "R" && !reviveDone) {
+        setReviveDone(true); bumpCoins(75); setInv((i) => ({ ...i, potions: i.potions + 3 }));
+        setMessage("💊 Nurse quest complete! +75 coins, +3 potions.");
+      }
+      else if (t === "U") {
+        // Wonder trade: swap first caught for a random surprise
+        setCaught((c) => {
+          if (c.length === 0) return c;
+          const surprise = 1 + Math.floor(Math.random() * 493);
+          const n = [...c]; n[0] = surprise;
+          setMessage(`🎁 Wonder Trade! You received #${surprise}.`);
+          return n;
+        });
+      }
+      else if (t === "X") { setZone("cave"); setMessage("🕳 You entered the cave!"); return { x: 1, y: 1 }; }
+      else if (t === "L") { void triggerLegendary(); }
+      else if (t === "N") { void triggerTrainer(nkey); }
+      else if (t === "G" && Math.random() < (isNight ? 0.34 : 0.28)) {
+        setMessage("The grass rustled…"); void triggerEncounter();
+      } else if (t === "G") { setMessage("You stroll through the grass…"); }
+      else if (t === "P") { setMessage(""); }
+
+      // Decrement repel on any successful step
+      if (inv.repel > 0) setInv((i) => ({ ...i, repel: Math.max(0, i.repel - 1) }));
+
       return { x: nx, y: ny };
     });
-  }, [encounter, busy, pickedCells, triggerEncounter, triggerTrainer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [encounter, busy, pickedCells, foundHidden, triggerEncounter, triggerTrainer, triggerLegendary, roamer, inv, hiddenItems, isNight, reviveDone, playerMon, zone]);
 
+  // Fishing (F) and Headbutt (J) — actions that target the tile you're facing
+  const fish = () => {
+    // Look for adjacent water
+    const near = [[0,1],[0,-1],[1,0],[-1,0]].some(([dx,dy]) => tileAt(pos.x+dx, pos.y+dy) === "W");
+    if (!near) { setMessage("🎣 No water nearby to fish."); return; }
+    setMessage("🎣 Cast the line…"); void triggerEncounter(WATER_POOL);
+  };
+  const headbutt = () => {
+    const near = [[0,1],[0,-1],[1,0],[-1,0]].some(([dx,dy]) => tileAt(pos.x+dx, pos.y+dy) === "T");
+    if (!near) { setMessage("🌲 No tree nearby to headbutt."); return; }
+    setMessage("🌲 You headbutt the tree!"); void triggerEncounter(BUG_FLY_POOL);
+  };
 
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
@@ -2228,26 +2471,33 @@ function CatchGym({ onClose, onChallengeGym }: {
       else if (e.key === "ArrowDown" || e.key === "s") { e.preventDefault(); move(0, 1); }
       else if (e.key === "ArrowLeft" || e.key === "a") { e.preventDefault(); move(-1, 0); }
       else if (e.key === "ArrowRight" || e.key === "d") { e.preventDefault(); move(1, 0); }
+      else if (e.key === "f") { fish(); }
+      else if (e.key === "j") { headbutt(); }
     };
     window.addEventListener("keydown", on);
     return () => window.removeEventListener("keydown", on);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [move]);
 
   const attackWild = () => {
     if (!encounter || !playerMon) return;
     const eff = typeMult(playerMon.type, encounter.mon.type);
+    const dojoBonus = 1 + (Math.min(6, inv.potions) * 0.02); // playful nod to EV training
     const base = 15 + Math.floor(Math.random() * 20) + Math.round(playerMon.baseAtk * 0.08);
-    const dmg = Math.max(4, Math.round(base * eff));
+    const dmg = Math.max(4, Math.round(base * eff * dojoBonus));
     const hp = Math.max(0, encounter.hp - dmg);
     const label = eff >= 2 ? " (super effective!)" : eff <= 0.5 ? " (not very effective)" : "";
     if (hp === 0) {
-      const trainerKey = (window as unknown as { __ppbTrainerKey?: string }).__ppbTrainerKey;
-      if (trainerKey) {
-        setTrainersDone((s) => { const n = new Set(s); n.add(trainerKey); return n; });
-        (window as unknown as { __ppbTrainerKey?: string }).__ppbTrainerKey = undefined;
+      if (encounter.kind === "trainer" && encounter.trainerKey) {
+        setTrainersDone((s) => { const n = new Set(s); n.add(encounter.trainerKey!); return n; });
         setEncounter({ ...encounter, hp, message: `You beat the trainer! ${dmg} dmg${label} — +25 coins!` });
-        // Bump coins in localStorage directly (visible next time lobby reads)
-        try { const cur = Number(localStorage.getItem("ppb-coins") ?? "0"); localStorage.setItem("ppb-coins", String(cur + 25)); } catch {}
+        bumpCoins(25);
+      } else if (encounter.kind === "legendary") {
+        setEncounter({ ...encounter, hp, message: `${encounter.mon.name} is weak — try a Poké Ball!` });
+        return;
+      } else if (encounter.kind === "champion") {
+        setEncounter({ ...encounter, hp, message: `Challenger defeated! ${dmg} dmg${label} — +100 coins!` });
+        bumpCoins(100); setDefenses((d) => d + 1);
       } else {
         setEncounter({ ...encounter, hp, message: `${encounter.mon.name} fainted! ${dmg} dmg${label}` });
       }
@@ -2257,47 +2507,159 @@ function CatchGym({ onClose, onChallengeGym }: {
     }
   };
 
+  const useBerry = () => {
+    if (!encounter || inv.berries <= 0) return;
+    setInv((i) => ({ ...i, berries: i.berries - 1 }));
+    setEncounter({ ...encounter, message: "🍒 You ate a berry! (Heals your team next round.)" });
+  };
 
   const throwBall = () => {
     if (!encounter) return;
     const ratio = encounter.hp / encounter.maxHp;
-    const chance = Math.max(0.15, 0.95 - ratio * 0.8);
+    const legPenalty = encounter.kind === "legendary" ? 0.35 : 1;
+    const catchBonus = inv.catchBadge ? 0.1 : 0;
+    const chance = Math.max(0.05, (0.95 - ratio * 0.8) * legPenalty + catchBonus);
     if (Math.random() < chance) {
-      setCaught((c) => c.length >= 24 ? c : [...c, encounter.id]);
-      setEncounter({ ...encounter, message: `Gotcha! ${encounter.mon.name} was caught!` });
+      if (encounter.kind === "legendary") {
+        setTrophies((t) => t.includes(encounter.id) ? t : [...t, encounter.id]);
+        setRoamer(null);
+        setEncounter({ ...encounter, message: `🏆 Legendary ${encounter.mon.name} caught! Trophy earned.` });
+      } else {
+        // Nuzlocke: only first per route counts
+        if (nuzlocke) {
+          const routeKey = encounter.id;
+          if (routeCaught.has(routeKey)) {
+            setEncounter({ ...encounter, message: "Nuzlocke: already caught one from this route — released." });
+            setTimeout(() => setEncounter(null), 1400); return;
+          }
+          setRouteCaught((s) => { const n = new Set(s); n.add(routeKey); return n; });
+        }
+        setCaught((c) => {
+          const full = c.length >= 6;
+          if (full) { setPcBox((p) => [...p, encounter.id]); return c; }
+          return [...c, encounter.id];
+        });
+        setEncounter({ ...encounter, message: `Gotcha! ${encounter.mon.name} was caught${caught.length >= 6 ? " → sent to PC" : ""}!` });
+      }
       setTimeout(() => setEncounter(null), 1400);
     } else {
       setEncounter({ ...encounter, message: "Oh no! It broke free!" });
     }
   };
 
-  const flee = () => setEncounter(null);
+  const flee = () => {
+    if (nuzlocke && encounter && encounter.hp === 0) {
+      // No-op: fainted still handled
+    }
+    setEncounter(null);
+  };
 
-  const releaseOne = (id: number) => setCaught((c) => { const i = c.indexOf(id); if (i < 0) return c; const n = [...c]; n.splice(i, 1); return n; });
+  const releaseOne = (id: number, from: "team" | "pc") => {
+    if (from === "team") setCaught((c) => { const i = c.indexOf(id); if (i < 0) return c; const n = [...c]; n.splice(i, 1); return n; });
+    else setPcBox((c) => { const i = c.indexOf(id); if (i < 0) return c; const n = [...c]; n.splice(i, 1); return n; });
+  };
+  const swapPcToTeam = (id: number) => {
+    if (caught.length >= 6) { alert("Team is full (6). Release one first."); return; }
+    setPcBox((p) => { const i = p.indexOf(id); if (i < 0) return p; const n = [...p]; n.splice(i, 1); return n; });
+    setCaught((c) => [...c, id]);
+  };
+
+  const askQuiz = (g: typeof GYM_LEADERS[number]) => {
+    const ans = window.prompt(`${g.name} asks: "${g.quiz.q}" (${g.quiz.choices.join(" / ")})`);
+    return ans && ans.trim().toLowerCase() === g.quiz.a;
+  };
 
   const challenge = async (g: typeof GYM_LEADERS[number]) => {
     if (team.length === 0) { alert("Pick a starter first!"); return; }
+    if (!askQuiz(g)) { alert("Wrong! Try again after some training."); return; }
     setBusy(true);
     try {
-      const my = [...team];
-      while (my.length < 3) my.push(my[0]);
-      await onChallengeGym(my.slice(0, 3), g.team);
-      if (!beaten.includes(g.id)) setBeaten((b) => [...b, g.id]);
+      const my = [...team]; while (my.length < 3) my.push(my[0]);
+      // Rematch scaling: after beating all 8, subsequent challenges scale up
+      let gymTeam = [...g.team];
+      if (beaten.length === GYM_LEADERS.length && beaten.includes(g.id)) {
+        gymTeam = gymTeam.map((id) => Math.min(649, id + rematchLevel * 30));
+        setRematchLevel((r) => r + 1);
+      }
+      await onChallengeGym(my.slice(0, 3), gymTeam);
+      if (!beaten.includes(g.id)) {
+        setBeaten((b) => [...b, g.id]);
+        // Grant perk
+        setInv((i) => {
+          const n = { ...i };
+          if (g.id === "brock") n.cutBadge = true;
+          if (g.id === "misty") n.surfBadge = true;
+          if (g.id === "surge") n.repelBadge = true;
+          if (g.id === "erika") n.strengthBadge = true;
+          if (g.id === "koga") n.catchBadge = true;
+          if (g.id === "sabrina") n.seeBadge = true;
+          if (g.id === "blaine") n.flyBadge = true;
+          if (g.id === "giovanni") n.eliteUnlocked = true;
+          return n;
+        });
+        bumpCoins(g.reward);
+      }
     } finally { setBusy(false); }
   };
 
+  const challengeE4 = async (e: typeof ELITE_FOUR[number]) => {
+    if (!inv.eliteUnlocked) { alert("Beat all 8 gyms first."); return; }
+    if (team.length === 0) return;
+    setBusy(true);
+    try {
+      const my = [...team]; while (my.length < 3) my.push(my[0]);
+      await onChallengeGym(my.slice(0, 3), e.team);
+      if (!e4Beaten.includes(e.id)) { setE4Beaten((b) => [...b, e.id]); bumpCoins(250); }
+    } finally { setBusy(false); }
+  };
+
+  const defendChampion = async () => {
+    if (e4Beaten.length < 4) { alert("Beat the Elite Four first to become Champion."); return; }
+    setBusy(true);
+    try {
+      const opp = [1 + Math.floor(Math.random() * 649), 1 + Math.floor(Math.random() * 649), 1 + Math.floor(Math.random() * 649)];
+      const my = [...team]; while (my.length < 3) my.push(my[0]);
+      await onChallengeGym(my.slice(0, 3), opp);
+      setDefenses((d) => d + 1); bumpCoins(150);
+    } finally { setBusy(false); }
+  };
+
+  const flyToHeal = () => {
+    if (!inv.flyBadge) { setMessage("You need Blaine's badge to Fly."); return; }
+    setPos({ x: 1, y: 5 }); setMessage("🕊 Flew to the Heal Center! Team restored.");
+  };
+  const buyRepel = () => { if (coinsView < 50) return; bumpCoins(-50); setInv((i) => ({ ...i, repel: i.repel + 100 })); };
+  const buyBike = () => { if (coinsView < 200 || inv.bike) return; bumpCoins(-200); setInv((i) => ({ ...i, bike: true })); };
+  const buyPotion = () => { if (coinsView < 30) return; bumpCoins(-30); setInv((i) => ({ ...i, potions: i.potions + 1 })); };
+  const freeRepelBadge = () => { if (!inv.repelBadge) return; setInv((i) => ({ ...i, repel: i.repel + 50 })); setMessage("Free repel from Lt. Surge's badge!"); };
+
+  const takePhoto = () => {
+    const names = [starter, ...caught].filter((x) => x !== null).slice(0, 6).map((id) => `#${id}`).join(" · ");
+    alert(`📸 Snapshot saved!\nTeam: ${names || "empty"}\nBadges: ${beaten.length}/8\nDex: ${dexPct}%\nTime: ${new Date().toLocaleString()}`);
+  };
+
+  const nightOverlay = isNight ? { boxShadow: "inset 0 0 200px rgba(0,0,50,0.55)" } : {};
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-3 p-3 sm:p-5">
-      <header className="flex items-end justify-between">
+    <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-3 p-3 sm:p-5" suppressHydrationWarning>
+      <header className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h1 className="text-[10px] tracking-wider text-primary sm:text-sm">CATCH &amp; GYM</h1>
+          <h1 className="text-[10px] tracking-wider text-primary sm:text-sm">CATCH &amp; GYM {isNight ? "🌙" : "☀"}</h1>
           <p className="mt-1 text-[7px] text-muted-foreground sm:text-[9px]">
-            Walk in the grass, catch Pokémon (infinite Poké Balls!), then challenge gym leaders.
+            Walk, catch, evolve, and battle. All 25 upgrades live: bike, repel, fishing, headbutt, hidden items, day/night, swarms, roaming legendaries, caves, HMs, berries, PC box, revive quest, move tutor, dojo, gym perks, rematches, Elite Four, champion defense, quizzes, trainer card, photo, wonder trade, nuzlocke.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">💰 {coinsView}</span>
           <span className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">📖 Dex {dexPct}%</span>
-          <span className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">◉ Cells: {cells}</span>
+          <span className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">◉ Cells {cells}</span>
+          <span className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">🏆 {trophies.length}</span>
+          {swarm && <span className="rounded border-2 border-primary bg-primary/20 px-2 py-1 text-[8px] sm:text-[10px]">🌊 Swarm: {swarm.name}</span>}
+          {inv.repel > 0 && <span className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px]">💨 {inv.repel}</span>}
+          {inv.bike && <span className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px]">🚲 On</span>}
+          <label className="flex items-center gap-1 rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">
+            <input type="checkbox" checked={nuzlocke} onChange={(e) => setNuzlocke(e.target.checked)} /> Nuzlocke
+          </label>
           <button onClick={onClose} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">← Lobby</button>
         </div>
       </header>
@@ -2319,49 +2681,126 @@ function CatchGym({ onClose, onChallengeGym }: {
 
       {starter !== null && (
         <>
-          {/* Walking map */}
-          <section className="rounded border-2 border-border bg-panel p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-[9px] text-primary sm:text-[11px]">WILD GRASS MAP</p>
-              <span className="text-[7px] text-muted-foreground sm:text-[9px]">{message}</span>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-[auto_1fr]">
-              <div className="mx-auto grid" style={{ gridTemplateColumns: `repeat(${CG_SIZE}, 22px)`, gridAutoRows: "22px" }}>
-                {CG_MAP.flatMap((row, y) => row.split("").map((t, x) => {
-                  const here = pos.x === x && pos.y === y;
-                  const cellPicked = pickedCells.has(`${x},${y}`);
-                  const trainerDone = trainersDone.has(`${x},${y}`);
-                  const bg = t === "T" ? "#2a5a2a" : t === "G" ? "#6bd36b" : t === "W" ? "#4ea8ff"
-                    : t === "C" ? (cellPicked ? "#8a7a55" : "#ffd83a")
-                    : t === "H" ? "#ff9ec7" : t === "N" ? (trainerDone ? "#a89880" : "#e8b74a") : t === "$" ? "#9be0a8"
-                    : "#c8b884";
-                  return (
-                    <div key={`${x},${y}`} style={{ background: bg, border: "1px solid rgba(0,0,0,0.15)", position: "relative" }}>
-                      {t === "T" && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 13, lineHeight: "22px" }}>🌲</span>}
-                      {t === "C" && !cellPicked && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 12, lineHeight: "22px" }}>◉</span>}
-                      {t === "H" && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 12, lineHeight: "22px" }}>🏥</span>}
-                      {t === "N" && !trainerDone && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 12, lineHeight: "22px" }}>👤</span>}
-                      {t === "$" && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 12, lineHeight: "22px" }}>🛒</span>}
-                      {here && <span style={{ position: "absolute", inset: 0, textAlign: "center", fontSize: 16, lineHeight: "22px" }}>🧑</span>}
-                    </div>
-                  );
-                }))}
-              </div>
+          {/* Tabs */}
+          <div className="flex flex-wrap gap-1">
+            {(["map","team","gyms","shop","card","photo"] as const).map((t) => (
+              <button key={t} onClick={() => t === "photo" ? takePhoto() : setTab(t)}
+                className={`rounded border-2 px-3 py-1 text-[8px] sm:text-[10px] ${tab === t ? "border-primary bg-primary/20" : "border-border bg-muted"}`}>
+                {t === "map" ? "🗺 Map" : t === "team" ? "📦 Team+PC" : t === "gyms" ? "🏟 Gyms & E4" : t === "shop" ? "🛒 Shop" : t === "card" ? "🪪 Trainer Card" : "📸 Photo"}
+              </button>
+            ))}
+            <button onClick={() => setInv((i) => ({ ...i, bike: !i.bike }))} disabled={!inv.bike}
+              className="rounded border-2 border-border bg-muted px-3 py-1 text-[8px] sm:text-[10px] disabled:opacity-40">🚲 Toggle Bike</button>
+            <button onClick={flyToHeal} disabled={!inv.flyBadge} className="rounded border-2 border-border bg-muted px-3 py-1 text-[8px] disabled:opacity-40">🕊 Fly to 🏥</button>
+            <button onClick={freeRepelBadge} disabled={!inv.repelBadge} className="rounded border-2 border-border bg-muted px-3 py-1 text-[8px] disabled:opacity-40">💨 Free Repel</button>
+            {zone === "cave" && <button onClick={() => { setZone("over"); setPos({ x: 13, y: 13 }); }} className="rounded border-2 border-border bg-muted px-3 py-1 text-[8px]">↩ Leave Cave</button>}
+          </div>
 
-              {/* D-pad */}
-              <div className="flex flex-col items-center justify-center gap-1">
-                <button onClick={() => move(0, -1)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">▲</button>
-                <div className="flex gap-1">
-                  <button onClick={() => move(-1, 0)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">◀</button>
-                  <button onClick={() => move(0, 1)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">▼</button>
-                  <button onClick={() => move(1, 0)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">▶</button>
+          {tab === "map" && (
+            <section className="rounded border-2 border-border bg-panel p-3">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[9px] text-primary sm:text-[11px]">{zone === "cave" ? "MT. MOON (CAVE)" : "OVERWORLD MAP"} {isNight && "· NIGHT"}</p>
+                <span className="text-[7px] text-muted-foreground sm:text-[9px]">{message}</span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-[auto_1fr]">
+                <div className="mx-auto grid" style={{ gridTemplateColumns: `repeat(${CG_SIZE}, 22px)`, gridAutoRows: "22px", ...nightOverlay }}>
+                  {currentMap.flatMap((row, y) => row.split("").map((t, x) => {
+                    const here = pos.x === x && pos.y === y;
+                    const cellPicked = pickedCells.has(`${x},${y}`);
+                    const trainerDone = trainersDone.has(`${x},${y}`);
+                    const isRoam = roamer && roamer.x === x && roamer.y === y;
+                    const isHidden = inv.seeBadge && hiddenItems.has(`${x},${y}`) && !foundHidden.has(`${x},${y}`);
+                    const bg = t === "T" ? "#2a5a2a" : t === "G" ? (isNight ? "#3f8d3f" : "#6bd36b") : t === "W" ? "#4ea8ff"
+                      : t === "C" ? (cellPicked ? "#8a7a55" : "#ffd83a")
+                      : t === "H" ? "#ff9ec7" : t === "N" ? (trainerDone ? "#a89880" : "#e8b74a") : t === "$" ? "#9be0a8"
+                      : t === "B" ? "#c86a6a" : t === "K" ? "#8a8a8a" : t === "X" ? "#333" : t === "L" ? "#8a2be2"
+                      : t === "D" ? "#d19a5c" : t === "M" ? "#b39ddb" : t === "R" ? "#f28ba8" : t === "U" ? "#7ce0e0"
+                      : t === "F" ? "#c0d8ff" : "#c8b884";
+                    return (
+                      <div key={`${x},${y}`} style={{ background: bg, border: "1px solid rgba(0,0,0,0.15)", position: "relative" }}>
+                        {t === "T" && <span style={emojiCss}>🌲</span>}
+                        {t === "C" && !cellPicked && <span style={emojiCss}>◉</span>}
+                        {t === "H" && <span style={emojiCss}>🏥</span>}
+                        {t === "N" && !trainerDone && <span style={emojiCss}>👤</span>}
+                        {t === "$" && <span style={emojiCss}>🛒</span>}
+                        {t === "B" && <span style={emojiCss}>🍒</span>}
+                        {t === "K" && <span style={emojiCss}>🪨</span>}
+                        {t === "X" && <span style={emojiCss}>🕳</span>}
+                        {t === "L" && <span style={emojiCss}>⭐</span>}
+                        {t === "D" && <span style={emojiCss}>🥋</span>}
+                        {t === "M" && <span style={emojiCss}>✏</span>}
+                        {t === "R" && !reviveDone && <span style={emojiCss}>💊</span>}
+                        {t === "U" && <span style={emojiCss}>🎁</span>}
+                        {t === "F" && <span style={emojiCss}>📦</span>}
+                        {isHidden && <span style={{ ...emojiCss, color: "#fff" }}>✨</span>}
+                        {isRoam && <span style={emojiCss}>🔴</span>}
+                        {here && <span style={{ ...emojiCss, fontSize: 16 }}>🧑</span>}
+                      </div>
+                    );
+                  }))}
                 </div>
-                <p className="mt-2 text-[7px] text-muted-foreground sm:text-[9px]">Arrow keys work too</p>
-              </div>
-            </div>
-          </section>
 
-          {/* Encounter modal */}
+                <div className="flex flex-col items-center justify-center gap-1">
+                  <button onClick={() => move(0, -1)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">▲</button>
+                  <div className="flex gap-1">
+                    <button onClick={() => move(-1, 0)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">◀</button>
+                    <button onClick={() => move(0, 1)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">▼</button>
+                    <button onClick={() => move(1, 0)} className="h-9 w-9 rounded border-2 border-border bg-muted text-lg">▶</button>
+                  </div>
+                  <div className="mt-2 flex gap-1">
+                    <button onClick={fish} className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px]">🎣 Fish (F)</button>
+                    <button onClick={headbutt} className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px]">🌲 Headbutt (J)</button>
+                  </div>
+                  <p className="mt-1 text-[7px] text-muted-foreground sm:text-[9px]">Arrows / WASD to walk</p>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {tab === "shop" && (
+            <section className="rounded border-2 border-border bg-panel p-3 text-[9px] sm:text-[11px]">
+              <p className="mb-2 text-primary">SHOP · Coins: {coinsView}</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button onClick={buyBike} disabled={inv.bike || coinsView < 200} className="rounded border-2 border-border bg-muted p-2 disabled:opacity-40 text-left">🚲 Bike — 200c {inv.bike && "(owned)"}</button>
+                <button onClick={buyRepel} disabled={coinsView < 50} className="rounded border-2 border-border bg-muted p-2 disabled:opacity-40 text-left">💨 Repel (+100 steps) — 50c</button>
+                <button onClick={buyPotion} disabled={coinsView < 30} className="rounded border-2 border-border bg-muted p-2 disabled:opacity-40 text-left">🧪 Potion — 30c (have {inv.potions})</button>
+                <div className="rounded border-2 border-border bg-muted p-2">🍒 Berries: {inv.berries} (find on 🍒 tiles)</div>
+              </div>
+            </section>
+          )}
+
+          {tab === "card" && (
+            <section className="rounded border-2 border-border bg-panel p-4 text-[9px] sm:text-[11px]">
+              <p className="mb-2 text-primary">🪪 TRAINER CARD</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div>
+                  <p>Starter: #{starter}</p>
+                  <p>Badges: {beaten.length}/8</p>
+                  <p>Elite Four: {e4Beaten.length}/4 {inv.eliteUnlocked ? "" : "(locked)"}</p>
+                  <p>Champion Defenses: {defenses}</p>
+                  <p>Rematch Level: {rematchLevel}</p>
+                  <p>Dex: {dexPct}%</p>
+                  <p>Trophies: {trophies.length} ({trophies.join(", ") || "—"})</p>
+                  <p>Nuzlocke: {nuzlocke ? "ON" : "off"}</p>
+                </div>
+                <div>
+                  <p className="text-primary">Perks unlocked:</p>
+                  <ul className="ml-3 list-disc text-muted-foreground">
+                    {inv.cutBadge && <li>Cut (chop trees)</li>}
+                    {inv.surfBadge && <li>Surf (walk on water)</li>}
+                    {inv.repelBadge && <li>Free Repel</li>}
+                    {inv.strengthBadge && <li>Strength (boulders)</li>}
+                    {inv.catchBadge && <li>+10% catch rate</li>}
+                    {inv.seeBadge && <li>See hidden items ✨</li>}
+                    {inv.flyBadge && <li>Fly (fast heal)</li>}
+                    {inv.eliteUnlocked && <li>Elite Four access</li>}
+                    {!beaten.length && <li>None yet — beat gyms!</li>}
+                  </ul>
+                </div>
+              </div>
+            </section>
+          )}
+
           {encounter && (
             <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-4">
               <div className="w-full max-w-md rounded border-4 border-primary bg-panel p-4 text-[9px] sm:text-[11px]">
@@ -2374,79 +2813,127 @@ function CatchGym({ onClose, onChallengeGym }: {
                     <div className="h-1.5 w-24 overflow-hidden rounded bg-background">
                       <div className="h-full" style={{ width: `${(encounter.hp / encounter.maxHp) * 100}%`, background: encounter.hp > encounter.maxHp * 0.4 ? "var(--color-hp)" : "var(--color-hp-low)" }} />
                     </div>
-                    <p className="text-muted-foreground">{encounter.hp}/{encounter.maxHp} HP</p>
-                    <p className="text-muted-foreground">Type: {encounter.mon.type}</p>
+                    <p className="text-muted-foreground">{encounter.hp}/{encounter.maxHp} HP · {encounter.mon.type}</p>
                   </div>
                   <div className="flex flex-col items-center">
                     {playerMon ? (
                       <>
                         <img src={playerMon.sprite} alt={playerMon.name} className="h-20 w-20" style={{ imageRendering: "pixelated" }} />
                         <p style={{ color: playerMon.color }}>{playerMon.name}</p>
-                        <p className="text-muted-foreground">You</p>
+                        <p className="text-muted-foreground">You · Berries {inv.berries}</p>
                       </>
                     ) : <p className="text-muted-foreground">Loading…</p>}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <button onClick={attackWild} disabled={!playerMon} className="rounded border-2 border-border bg-accent px-2 py-2 text-primary-foreground disabled:opacity-40">⚔ Attack</button>
-                  <button onClick={throwBall} className="rounded border-2 border-border bg-primary px-2 py-2 text-primary-foreground">◉ Throw Poké Ball</button>
-                  <button onClick={flee} className="col-span-2 rounded border-2 border-border bg-muted px-2 py-1 text-[8px]">🏃 Run away</button>
+                  <button onClick={throwBall} disabled={encounter.kind === "trainer" || encounter.kind === "champion"} className="rounded border-2 border-border bg-primary px-2 py-2 text-primary-foreground disabled:opacity-40">◉ Throw Poké Ball</button>
+                  <button onClick={useBerry} disabled={inv.berries <= 0} className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px] disabled:opacity-40">🍒 Berry ({inv.berries})</button>
+                  <button onClick={flee} className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px]">🏃 Run</button>
                 </div>
-                <p className="mt-2 text-center text-[7px] text-muted-foreground">Weaken it first! Catch chance = {Math.round(Math.max(0.15, 0.95 - (encounter.hp / encounter.maxHp) * 0.8) * 100)}%</p>
+                <p className="mt-2 text-center text-[7px] text-muted-foreground">
+                  Catch chance ≈ {Math.round(Math.max(0.05, (0.95 - (encounter.hp / encounter.maxHp) * 0.8) * (encounter.kind === "legendary" ? 0.35 : 1) + (inv.catchBadge ? 0.1 : 0)) * 100)}%
+                </p>
               </div>
             </div>
           )}
 
-          {/* Team box */}
-          <section className="rounded border-2 border-border bg-panel p-3">
-            <p className="mb-2 text-[9px] text-primary sm:text-[11px]">TEAM BOX ({caught.length}/24)</p>
-            {caught.length === 0 ? (
-              <p className="text-[8px] text-muted-foreground sm:text-[10px]">No catches yet. Walk into tall grass to find wild Pokémon.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {caught.map((id, i) => (
-                  <div key={`${id}-${i}`} className="flex items-center gap-1 rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">
-                    <img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`}
-                      alt={`#${id}`} className="h-8 w-8" style={{ imageRendering: "pixelated" }} />
-                    <span>#{id}</span>
-                    <button onClick={() => releaseOne(id)} className="ml-1 text-red-400">×</button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <p className="mt-2 text-[7px] text-muted-foreground sm:text-[9px]">Your gym battle team is your starter + first 2 catches.</p>
-          </section>
-
-          {/* Gyms */}
-          <section className="rounded border-2 border-border bg-panel p-3">
-            <p className="mb-2 text-[9px] text-primary sm:text-[11px]">GYM LEADERS ({beaten.length}/{GYM_LEADERS.length})</p>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {GYM_LEADERS.map((g) => {
-                const done = beaten.includes(g.id);
-                return (
-                  <div key={g.id} className={`rounded border-2 p-2 text-[8px] sm:text-[10px] ${done ? "border-primary bg-primary/10" : "border-border bg-muted"}`}>
-                    <p className="text-primary">{done ? "✓ " : ""}{g.name}</p>
-                    <div className="my-1 flex gap-1">
-                      {g.team.map((id) => (
-                        <img key={id} src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`}
-                          alt={`#${id}`} className="h-9 w-9" style={{ imageRendering: "pixelated" }} />
-                      ))}
+          {tab === "team" && (
+            <section className="rounded border-2 border-border bg-panel p-3">
+              <p className="mb-2 text-[9px] text-primary sm:text-[11px]">TEAM ({caught.length}/6)</p>
+              {caught.length === 0 ? (
+                <p className="text-[8px] text-muted-foreground sm:text-[10px]">No catches yet.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {caught.map((id, i) => (
+                    <div key={`${id}-${i}`} className="flex items-center gap-1 rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">
+                      <img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`} alt={`#${id}`} className="h-8 w-8" style={{ imageRendering: "pixelated" }} />
+                      <span>#{id}</span>
+                      <button onClick={() => releaseOne(id, "team")} className="ml-1 text-red-400">×</button>
                     </div>
-                    <p className="text-muted-foreground">Reward: {g.reward}c</p>
-                    <button disabled={busy} onClick={() => challenge(g)}
-                      className="mt-1 w-full rounded border-2 border-border bg-accent px-2 py-1 text-[8px] text-primary-foreground disabled:opacity-40 sm:text-[10px]">
-                      ⚔ Challenge
-                    </button>
+                  ))}
+                </div>
+              )}
+              <p className="mt-3 mb-2 text-[9px] text-primary sm:text-[11px]">📦 PC BOX ({pcBox.length})</p>
+              {pcBox.length === 0 ? (
+                <p className="text-[8px] text-muted-foreground sm:text-[10px]">Overflow catches land here when your team is full.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {pcBox.map((id, i) => (
+                    <div key={`pc-${id}-${i}`} className="flex items-center gap-1 rounded border-2 border-border bg-muted px-2 py-1 text-[8px] sm:text-[10px]">
+                      <img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`} alt={`#${id}`} className="h-7 w-7" style={{ imageRendering: "pixelated" }} />
+                      <span>#{id}</span>
+                      <button onClick={() => swapPcToTeam(id)} className="ml-1 text-primary">↑</button>
+                      <button onClick={() => releaseOne(id, "pc")} className="ml-1 text-red-400">×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {tab === "gyms" && (
+            <>
+              <section className="rounded border-2 border-border bg-panel p-3">
+                <p className="mb-2 text-[9px] text-primary sm:text-[11px]">GYM LEADERS ({beaten.length}/{GYM_LEADERS.length}) · Rematch Lv {rematchLevel}</p>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {GYM_LEADERS.map((g) => {
+                    const done = beaten.includes(g.id);
+                    return (
+                      <div key={g.id} className={`rounded border-2 p-2 text-[8px] sm:text-[10px] ${done ? "border-primary bg-primary/10" : "border-border bg-muted"}`}>
+                        <p className="text-primary">{done ? "✓ " : ""}{g.name}</p>
+                        <div className="my-1 flex gap-1">
+                          {g.team.map((id) => (
+                            <img key={id} src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`} alt={`#${id}`} className="h-9 w-9" style={{ imageRendering: "pixelated" }} />
+                          ))}
+                        </div>
+                        <p className="text-muted-foreground">Reward: {g.reward}c</p>
+                        <p className="text-muted-foreground">Perk: {g.perk}</p>
+                        <button disabled={busy} onClick={() => challenge(g)}
+                          className="mt-1 w-full rounded border-2 border-border bg-accent px-2 py-1 text-[8px] text-primary-foreground disabled:opacity-40 sm:text-[10px]">
+                          ⚔ {done ? "Rematch (harder)" : "Challenge"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section className="rounded border-2 border-border bg-panel p-3">
+                <p className="mb-2 text-[9px] text-primary sm:text-[11px]">🏆 ELITE FOUR ({e4Beaten.length}/4) {inv.eliteUnlocked ? "" : "· LOCKED — beat Giovanni"}</p>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {ELITE_FOUR.map((e) => {
+                    const done = e4Beaten.includes(e.id);
+                    return (
+                      <div key={e.id} className={`rounded border-2 p-2 text-[8px] sm:text-[10px] ${done ? "border-primary bg-primary/10" : "border-border bg-muted"}`}>
+                        <p className="text-primary">{done ? "✓ " : ""}{e.name}</p>
+                        <div className="my-1 flex gap-1">
+                          {e.team.map((id) => (
+                            <img key={id} src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`} alt={`#${id}`} className="h-9 w-9" style={{ imageRendering: "pixelated" }} />
+                          ))}
+                        </div>
+                        <button disabled={busy || !inv.eliteUnlocked} onClick={() => challengeE4(e)}
+                          className="mt-1 w-full rounded border-2 border-border bg-accent px-2 py-1 text-[8px] text-primary-foreground disabled:opacity-40 sm:text-[10px]">
+                          ⚔ Challenge
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                {e4Beaten.length === 4 && (
+                  <div className="mt-3 rounded border-2 border-primary bg-primary/10 p-2 text-[9px] sm:text-[11px]">
+                    <p className="text-primary">★ You are the Champion! Defenses: {defenses}</p>
+                    <button onClick={defendChampion} disabled={busy} className="mt-1 rounded border-2 border-border bg-accent px-3 py-1 text-primary-foreground disabled:opacity-40">🛡 Defend Title (+150c)</button>
                   </div>
-                );
-              })}
-            </div>
-            {beaten.length === GYM_LEADERS.length && (
-              <p className="mt-2 text-[9px] text-primary">★ You are the Champion! ★</p>
-            )}
-          </section>
+                )}
+              </section>
+            </>
+          )}
         </>
       )}
     </main>
   );
 }
+
+const emojiCss: CSSProperties = { position: "absolute", inset: 0, textAlign: "center", fontSize: 12, lineHeight: "22px" };
+
