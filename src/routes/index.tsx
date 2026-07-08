@@ -2935,5 +2935,5 @@ function CatchGym({ onClose, onChallengeGym }: {
   );
 }
 
-const emojiCss: React.CSSProperties = { position: "absolute", inset: 0, textAlign: "center", fontSize: 12, lineHeight: "22px" };
+const emojiCss: CSSProperties = { position: "absolute", inset: 0, textAlign: "center", fontSize: 12, lineHeight: "22px" };
 
