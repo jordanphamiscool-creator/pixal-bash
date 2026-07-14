@@ -2142,7 +2142,92 @@ function Battle(props: {
 }
 
 // ============================================================
+// ============================================================
+// YouTube HUD helpers
+// ============================================================
+function formatMs(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const mm = Math.floor(s / 60);
+  const ss = s % 60;
+  return `${mm}:${ss.toString().padStart(2, "0")}`;
+}
+function matchTitle(mons: MonState[], mode: Mode): string {
+  if (mode === "teams") return `Team Battle · ${mons.length} mons`;
+  const names = mons.slice(0, 6).map((m) => m.data.name.replace(/^✦+/, ""));
+  const extra = mons.length > 6 ? ` +${mons.length - 6} more` : "";
+  return `${names.join(" vs ")}${extra}`;
+}
+function IntroCountdown({ startedAt }: { startedAt: number }) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((t) => t + 1), 100);
+    return () => clearInterval(id);
+  }, []);
+  const elapsed = performance.now() - startedAt;
+  const step = elapsed < 900 ? "3" : elapsed < 1800 ? "2" : elapsed < 2700 ? "1" : "FIGHT!";
+  const color = step === "FIGHT!" ? "#ffd83a" : "#fff";
+  void tick;
+  return (
+    <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
+      <div className="anim-evolve rounded-full px-8 py-6 text-4xl sm:text-6xl"
+        style={{ color, textShadow: "0 0 20px rgba(0,0,0,0.9), 0 0 40px currentColor" }}>
+        {step}
+      </div>
+    </div>
+  );
+}
+function MvpPanel({ statsRef }: { statsRef: React.MutableRefObject<Record<string, { dmg: number; kos: number; name: string; color: string; sprite: string }>> }) {
+  const entries = Object.values(statsRef.current).sort((a, b) => b.dmg - a.dmg).slice(0, 5);
+  if (entries.length === 0) return null;
+  const mvp = entries[0];
+  return (
+    <div className="mt-2 rounded border border-border bg-background/60 p-2 text-left">
+      <p className="mb-1 text-center text-[8px] text-primary sm:text-[10px]">🏆 MVP: {mvp.name} — {mvp.dmg} dmg · {mvp.kos} KO</p>
+      <ul className="space-y-0.5 text-[7px] leading-tight sm:text-[8px]">
+        {entries.map((e, i) => (
+          <li key={i} className="flex items-center gap-1" style={{ color: e.color }}>
+            <img src={e.sprite} alt="" className="h-4 w-4" style={{ imageRendering: "pixelated" }} />
+            <span>#{i + 1} {e.name} — {e.dmg} dmg · {e.kos} KO</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+function copyMatchSummary(
+  hud: BattleHud,
+  mons: MonState[],
+  winnerIdx: number | null,
+  winnerTeam: number | null,
+  mode: Mode,
+) {
+  const entries = Object.values(hud.statsRef.current).sort((a, b) => b.dmg - a.dmg);
+  const winner = winnerTeam !== null ? TEAM_NAMES[winnerTeam] : (winnerIdx !== null ? mons[winnerIdx].data.name : "DRAW");
+  const dur = formatMs(performance.now() - hud.startTimeRef.current);
+  const chapters = hud.koLogRef.current.map((k) => `${formatMs(k.t)} — ${k.name} KO'd`).join("\n");
+  const leaderboard = entries.slice(0, 5).map((e, i) => `${i + 1}. ${e.name} — ${e.dmg} dmg · ${e.kos} KO`).join("\n");
+  const text = [
+    `🔥 ${matchTitle(mons, mode)}`,
+    `🏆 Winner: ${winner}   ⏱ ${dur}   🎲 Battle #${hud.matchSeed.toString().padStart(6, "0")}`,
+    "",
+    "📺 Chapters:",
+    chapters || "0:00 — Start",
+    "",
+    "🏅 MVP leaderboard:",
+    leaderboard,
+    "",
+    hud.watermark ? `👉 ${hud.watermark}` : "",
+    "#Pokemon #AutoBattler #PixelPocketBrawl",
+  ].filter(Boolean).join("\n");
+  if (typeof navigator !== "undefined" && navigator.clipboard) {
+    navigator.clipboard.writeText(text).catch(() => {});
+  }
+  alert("YouTube summary copied to clipboard!\n\n" + text);
+}
+
+// ============================================================
 // Projectile FX
+
 // ============================================================
 function ProjectileFx({ p, now }: { p: Projectile; now: number }) {
   const deg = (p.angle * 180) / Math.PI;
