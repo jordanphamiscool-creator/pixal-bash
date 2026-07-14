@@ -884,6 +884,16 @@ function Game() {
         if (tgt && tgt.hp > 0) {
           tgt.hp = Math.max(0, tgt.hp - p.dmg);
           tgt.hitFlash = now + 250;
+          // ---- YouTube stats: track damage per attacker uid ----
+          const attacker = monsRef.current[p.fromIdx];
+          if (attacker) {
+            const key = attacker.data.uid;
+            const cur = statsRef.current[key] ?? { dmg: 0, kos: 0, name: attacker.data.name, color: attacker.data.color, sprite: attacker.data.sprite };
+            cur.dmg += p.dmg;
+            cur.name = attacker.data.name; cur.color = attacker.data.color; cur.sprite = attacker.data.sprite;
+            if (tgt.hp === 0) cur.kos += 1;
+            statsRef.current[key] = cur;
+          }
           popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 28, value: p.dmg, crit: p.crit, bornAt: now, color: p.crit ? "#ffd83a" : "#ff5566" });
           if (p.eff !== undefined && p.eff >= 2) {
             popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 52, value: 0, crit: true, bornAt: now, color: "#ffd83a" });
@@ -895,9 +905,12 @@ function Game() {
           if (tgt.hp === 0) {
             pushLog(`${tgt.data.name} was knocked out!`, "var(--color-muted-foreground)");
             if (Math.random() < 0.5) announce(`${tgt.data.name} ${KO_LINES[Math.floor(Math.random() * KO_LINES.length)]}`, "#ffd83a");
+            koLogRef.current.push({ t: performance.now() - startTimeRef.current, name: tgt.data.name, color: tgt.data.color });
+            setKoCam({ name: tgt.data.name, color: tgt.data.color, sprite: tgt.data.sprite, until: now + 1400 });
             killed = true;
           }
         }
+
 
       } else {
         const cur = tgt && tgt.hp > 0 ? tgt.pos : p.from;
