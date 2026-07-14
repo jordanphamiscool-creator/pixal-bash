@@ -1116,6 +1116,17 @@ function Game() {
       evolveMsRef.current = evolveSec * 1000;
       if (typeof window !== "undefined") (window as unknown as { __ppbEvolveMs?: number }).__ppbEvolveMs = evolveSec * 1000;
 
+      // Reset YouTube HUD / stats / KO log / intro
+      statsRef.current = {};
+      koLogRef.current = [];
+      startTimeRef.current = performance.now();
+      berserkUntilRef.current = 0;
+      setLastEvent(null); setKoCam(null);
+      setMatchSeed(Math.floor(Math.random() * 1_000_000));
+      setShowIntro(true);
+      setTimeout(() => setShowIntro(false), 3200);
+
+
       let resolvedTarget: string | null = null;
       if (betAmount > 0 && betAmount <= coins && betTarget) {
         if (mode === "teams" && (betTarget === "team-0" || betTarget === "team-1")) resolvedTarget = betTarget;
