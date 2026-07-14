@@ -2040,10 +2040,39 @@ function Battle(props: {
 
         </div>
 
+        {/* Watermark overlay for YouTube branding */}
+        {hud.watermark && (
+          <div className="pointer-events-none absolute bottom-2 right-3 text-[9px] sm:text-[11px]"
+            style={{ color: "rgba(255,255,255,0.75)", textShadow: "0 1px 2px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.6)" }}>
+            {hud.watermark}
+          </div>
+        )}
+
+        {/* Random event banner */}
+        {hud.lastEvent && now < hud.lastEvent.until && (
+          <div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded border-2 bg-background/85 px-3 py-2 text-center text-[9px] sm:text-[11px]"
+            style={{ borderColor: hud.lastEvent.color, color: hud.lastEvent.color, boxShadow: `0 0 20px ${hud.lastEvent.color}` }}>
+            {hud.lastEvent.text}
+          </div>
+        )}
+
+        {/* KO cam splash */}
+        {hud.koCam && now < hud.koCam.until && (
+          <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center">
+            <div className="rounded border-4 bg-background/70 px-6 py-3" style={{ borderColor: hud.koCam.color, boxShadow: `0 0 40px ${hud.koCam.color}` }}>
+              <img src={hud.koCam.sprite} alt="" className="mx-auto h-24 w-24" style={{ imageRendering: "pixelated", filter: `drop-shadow(0 0 12px ${hud.koCam.color})` }} />
+              <p className="mt-1 text-center text-[12px] sm:text-[16px]" style={{ color: hud.koCam.color, textShadow: "0 0 6px black" }}>K.O.! {hud.koCam.name}</p>
+            </div>
+          </div>
+        )}
+
+        {/* 3-2-1 intro countdown */}
+        {hud.showIntro && <IntroCountdown startedAt={hud.startTimeRef.current} />}
+
         {status === "ended" && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70">
             <WinFx kind={shop.selectedFx} color={winnerTeam !== null ? TEAM_COLORS[winnerTeam] : (winnerIdx !== null ? mons[winnerIdx].data.color : "#ffd83a")} />
-            <div className="relative z-20 rounded border-2 border-border bg-panel px-5 py-4 text-center">
+            <div className="relative z-20 max-h-[92%] w-[92%] max-w-md overflow-auto rounded border-2 border-border bg-panel px-4 py-3 text-center">
               {winnerTeam !== null ? (
                 <>
                   <p className="text-[10px] sm:text-sm" style={{ color: TEAM_COLORS[winnerTeam] }}>{TEAM_NAMES[winnerTeam]} WINS!</p>
@@ -2066,13 +2095,41 @@ function Battle(props: {
                   {payout > 0 ? `+${payout}` : payout} coins (balance: {coins})
                 </p>
               )}
-              <button onClick={backToLobby} className="mt-2 rounded border-2 border-border bg-primary px-3 py-2 text-[9px] text-primary-foreground hover:brightness-110 sm:text-[10px]">
-                Back to Lobby
-              </button>
+
+              {/* MVP + damage leaderboard */}
+              <MvpPanel statsRef={hud.statsRef} />
+
+              {/* Chapter markers (KO timestamps) */}
+              {hud.koLogRef.current.length > 0 && (
+                <div className="mt-2 rounded border border-border bg-background/60 p-2 text-left">
+                  <p className="mb-1 text-[7px] text-primary sm:text-[9px]">📺 CHAPTERS (KO timeline)</p>
+                  <ul className="max-h-24 space-y-0.5 overflow-auto text-[7px] leading-tight sm:text-[8px]">
+                    {hud.koLogRef.current.map((k, i) => (
+                      <li key={i} style={{ color: k.color }}>{formatMs(k.t)} — {k.name} KO'd</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Watermark editor + copy summary */}
+              <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+                <input value={hud.watermark} onChange={(e) => hud.setWatermark(e.target.value)} placeholder="@YourChannel"
+                  className="rounded border-2 border-border bg-background px-2 py-1 text-[8px] sm:text-[9px]" />
+                <button onClick={() => copyMatchSummary(hud, mons, winnerIdx, winnerTeam, mode)}
+                  className="rounded border-2 border-border bg-muted px-3 py-1 text-[8px] sm:text-[9px]">📋 Copy YouTube Summary</button>
+              </div>
+
+              <div className="mt-2 flex justify-center gap-2">
+                <button onClick={() => location.reload()} className="rounded border-2 border-border bg-muted px-3 py-2 text-[9px] sm:text-[10px]">🔁 Rematch</button>
+                <button onClick={backToLobby} className="rounded border-2 border-border bg-primary px-3 py-2 text-[9px] text-primary-foreground hover:brightness-110 sm:text-[10px]">
+                  Back to Lobby
+                </button>
+              </div>
             </div>
           </div>
         )}
       </div>
+
 
       <section className="rounded-md border-2 border-border bg-panel p-3">
         <p className="mb-2 text-[8px] text-primary sm:text-[10px]">BATTLE LOG</p>
