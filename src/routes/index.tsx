@@ -1231,7 +1231,14 @@ function Game() {
       shop={shop}
       onManualEvolve={manualEvolveOne}
       backToLobby={() => { setScreen("lobby"); setStatus("fighting"); setBetTarget(null); }}
+      hud={{
+        speedMul, setSpeedMul, eventsOn, setEventsOn,
+        statsRef, koLogRef, startTimeRef,
+        lastEvent, koCam, watermark, setWatermark,
+        showIntro, matchSeed,
+      }}
     />
+
   );
 }
 
