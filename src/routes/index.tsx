@@ -822,8 +822,9 @@ function Game() {
       const formMul = d.isGmax ? 1.7 : d.isMega ? 1.6 : (m.plusLevel > 0 ? 1.0 : 1.0); // plus already baked into stats
       const shinyMul = m.shiny ? 1.08 : 1;
       const synMul = synergyRef.current[m.team] ?? 1;
+      const berserkMul = now < berserkUntilRef.current ? 2.0 : 1;
 
-      const atkCd = Math.max(700, ABILITY_COOLDOWN_BASE * (80 / Math.max(20, d.baseSpd)));
+      const atkCd = Math.max(700, ABILITY_COOLDOWN_BASE * (80 / Math.max(20, d.baseSpd))) / speed;
       if (now - m.lastAttack >= atkCd && dist <= ATTACK_RANGE + 60) {
         m.lastAttack = now;
         m.attackFlash = now + 300;
@@ -831,14 +832,14 @@ function Game() {
         const eff = typeMult(d.type, t.data.type);
         const atkMul = 0.7 + 0.6 * (d.baseAtk / 100);
         const defReduction = 1 - Math.min(0.55, t.data.baseDef / 360);
-        const dmg = Math.max(1, Math.round(d.basic.dmg * atkMul * formMul * shinyMul * synMul * (crit ? 1.5 : 1) * eff * defReduction * (0.75 + Math.random() * 0.5)));
+        const dmg = Math.max(1, Math.round(d.basic.dmg * atkMul * formMul * shinyMul * synMul * berserkMul * (crit ? 1.5 : 1) * eff * defReduction * (0.75 + Math.random() * 0.5)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
         if (projectilesRef.current.length < 40) {
           projectilesRef.current.push({
             id: idRef.current++, fromIdx: i, targetIdx: tgt,
             from: { ...m.pos }, pos: { ...m.pos }, angle: ang,
             color: d.color, dmg, crit, kind: d.basic.kind, bornAt: now,
-            duration: d.basic.kind === "lightning" ? 200 : 420,
+            duration: (d.basic.kind === "lightning" ? 200 : 420) / speed,
             eff,
           });
         }
@@ -846,27 +847,28 @@ function Game() {
         if (crit && Math.random() < 0.4) announce(CRIT_LINES[Math.floor(Math.random() * CRIT_LINES.length)], "#ffd83a");
       }
 
-      if (now - m.lastSpecial >= SPECIAL_COOLDOWN_BASE && dist <= ATTACK_RANGE + 120) {
+      if (now - m.lastSpecial >= SPECIAL_COOLDOWN_BASE / speed && dist <= ATTACK_RANGE + 120) {
         m.lastSpecial = now;
         m.attackFlash = now + 400;
         const crit = Math.random() < 0.22;
         const eff = typeMult(d.type, t.data.type);
         const atkMul = 0.8 + 0.6 * (d.baseAtk / 100);
         const defReduction = 1 - Math.min(0.5, t.data.baseDef / 380);
-        const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * formMul * shinyMul * synMul * (crit ? 1.7 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
+        const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * formMul * shinyMul * synMul * berserkMul * (crit ? 1.7 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
         if (projectilesRef.current.length < 40) {
           projectilesRef.current.push({
             id: idRef.current++, fromIdx: i, targetIdx: tgt,
             from: { ...m.pos }, pos: { ...m.pos }, angle: ang,
             color: d.color, dmg, crit, kind: d.signature.kind, bornAt: now,
-            duration: d.signature.kind === "lightning" ? 240 : 500,
+            duration: (d.signature.kind === "lightning" ? 240 : 500) / speed,
             eff,
           });
         }
         pushLog(`★ ${d.name} unleashed ${d.signature.name}! ${crit ? "CRIT " : ""}${dmg}${effLabel(eff)}`, d.color);
         if (soundRef.current) playSound(d.cry, volume * 0.6);
       }
+
 
       if (m.hitFlash && now > m.hitFlash) m.hitFlash = 0;
       if (m.attackFlash && now > m.attackFlash) m.attackFlash = 0;
