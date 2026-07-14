@@ -747,7 +747,9 @@ function Game() {
     void now;
   };
 
-  const step = (dt: number, now: number) => {
+  const step = (dtRaw: number, now: number) => {
+    const speed = speedRef.current;
+    const dt = dtRaw * speed;
     const mons = monsRef.current;
     mons.forEach((m, i) => {
       if (m.hp <= 0) return;
@@ -755,6 +757,7 @@ function Game() {
 
       // Evolution
       m.evolveTimer += dt * 1000;
+
       if (m.evolveEnabled && m.evolveTimer >= evolveMsRef.current) {
         if (d.evolveTo) {
           const next = d.evolveTo;
