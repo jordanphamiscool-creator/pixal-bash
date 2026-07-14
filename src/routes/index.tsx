@@ -661,7 +661,7 @@ function Game() {
       if (runningRef.current && status === "fighting") step(dt, now);
       // Throttle React renders to ~11fps so HP bars/log update without thrashing.
       // Lower than this triggers a TON of re-rendering with 18 mons.
-      if (now - lastRenderRef.current > 90) {
+      if (now - lastRenderRef.current > 60) {
         lastRenderRef.current = now;
         force((n) => (n + 1) % 1_000_000);
       }
