@@ -1779,6 +1779,18 @@ function Shop({ coins, setCoins, shop, setShop, onClose }: {
 // ============================================================
 // Battle screen (with pause-and-drag)
 // ============================================================
+type BattleHud = {
+  speedMul: number; setSpeedMul: (n: number) => void;
+  eventsOn: boolean; setEventsOn: (b: boolean) => void;
+  statsRef: React.MutableRefObject<Record<string, { dmg: number; kos: number; name: string; color: string; sprite: string }>>;
+  koLogRef: React.MutableRefObject<{ t: number; name: string; color: string }[]>;
+  startTimeRef: React.MutableRefObject<number>;
+  lastEvent: { text: string; color: string; until: number } | null;
+  koCam: { name: string; color: string; sprite: string; until: number } | null;
+  watermark: string; setWatermark: (s: string) => void;
+  showIntro: boolean;
+  matchSeed: number;
+};
 function Battle(props: {
   monsRef: React.MutableRefObject<MonState[]>;
   projectilesRef: React.MutableRefObject<Projectile[]>;
@@ -1790,8 +1802,10 @@ function Battle(props: {
   shop: ShopState;
   onManualEvolve: () => void;
   backToLobby: () => void;
+  hud: BattleHud;
 }) {
-  const { monsRef, projectilesRef, popsRef, mode, log, status, winnerIdx, winnerTeam, running, setRunning, payout, coins, shop, onManualEvolve, backToLobby } = props;
+  const { monsRef, projectilesRef, popsRef, mode, log, status, winnerIdx, winnerTeam, running, setRunning, payout, coins, shop, onManualEvolve, backToLobby, hud } = props;
+
   const mons = monsRef.current;
   const now = performance.now();
   const arenaRef = useRef<HTMLDivElement | null>(null);
