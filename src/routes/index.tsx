@@ -561,6 +561,80 @@ function Game() {
   const pickWinnerAbilityRef = useRef(false); // armed for this battle?
   const synergyRef = useRef<Record<number, number>>({}); // team# -> dmg multiplier
 
+  // ============ Game speed + random events + YouTube HUD ============
+  const [speedMul, setSpeedMul] = useState(1);
+  const speedRef = useRef(1);
+  useEffect(() => { speedRef.current = speedMul; }, [speedMul]);
+  const [eventsOn, setEventsOn] = useState(true);
+  const eventsOnRef = useRef(true);
+  useEffect(() => { eventsOnRef.current = eventsOn; }, [eventsOn]);
+  type StatEntry = { dmg: number; kos: number; name: string; color: string; sprite: string };
+  const statsRef = useRef<Record<string, StatEntry>>({});
+  const koLogRef = useRef<{ t: number; name: string; color: string }[]>([]);
+  const startTimeRef = useRef(0);
+  const [matchSeed, setMatchSeed] = useState<number>(0);
+  const [lastEvent, setLastEvent] = useState<{ text: string; color: string; until: number } | null>(null);
+  const [koCam, setKoCam] = useState<{ name: string; color: string; sprite: string; until: number } | null>(null);
+  const [watermark, setWatermark] = useState("");
+  useEffect(() => { if (typeof window !== "undefined") setWatermark(localStorage.getItem("ppb-watermark") || "@YourChannel"); }, []);
+  useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("ppb-watermark", watermark); }, [watermark]);
+  const [showIntro, setShowIntro] = useState(false);
+
+  const RANDOM_EVENTS = useMemo(() => [
+    { id: "meteor", text: "☄️ METEOR SHOWER — everyone loses 12% HP!", color: "#ff7a3a" },
+    { id: "rain", text: "🌧 HEALING RAIN — all Pokémon regen 18% HP!", color: "#4ea8ff" },
+    { id: "frenzy", text: "🔥 FRENZY MODE — all cooldowns reset!", color: "#ffd83a" },
+    { id: "speedup", text: "💨 SPEED BURST — +30% speed for everyone!", color: "#a0e0ff" },
+    { id: "shinystorm", text: "✨ SHINY STORM — everyone goes shiny!", color: "#ffd83a" },
+    { id: "suddendeath", text: "💀 SUDDEN DEATH — HP capped at 40%!", color: "#ff4a4a" },
+    { id: "goldrain", text: "🪙 GOLD RAIN — +25 bonus coins!", color: "#ffd83a" },
+    { id: "mirror", text: "🔄 MIRROR MATCH — two random mons swap HP!", color: "#d976ff" },
+    { id: "zap", text: "⚡ THUNDERSTORM — random Pokémon zapped for 35% HP!", color: "#fff7a0" },
+    { id: "teleport", text: "🌀 TELEPORT — everyone reshuffled across the arena!", color: "#a17af0" },
+    { id: "berserk", text: "😡 BERSERK — damage output doubled for 6 seconds!", color: "#ff5566" },
+    { id: "eclipse", text: "🌑 ECLIPSE — psychic + dark powers surge!", color: "#8a4dff" },
+  ], []);
+  const berserkUntilRef = useRef(0);
+
+  const triggerRandomEvent = useCallback(() => {
+    const now = performance.now();
+    const alive = monsRef.current.filter((m) => m.hp > 0);
+    if (alive.length < 2) return;
+    const ev = RANDOM_EVENTS[Math.floor(Math.random() * RANDOM_EVENTS.length)];
+    switch (ev.id) {
+      case "meteor": alive.forEach((m) => { m.hp = Math.max(1, m.hp - Math.round(m.maxHp * 0.12)); m.hitFlash = now + 300; }); break;
+      case "rain": alive.forEach((m) => { m.hp = Math.min(m.maxHp, m.hp + Math.round(m.maxHp * 0.18)); }); break;
+      case "frenzy": monsRef.current.forEach((m) => { m.lastAttack = 0; m.lastSpecial = 0; }); break;
+      case "speedup": monsRef.current.forEach((m) => { m.data = { ...m.data, baseSpd: Math.round(m.data.baseSpd * 1.3) }; }); break;
+      case "shinystorm": monsRef.current.forEach((m) => { m.shiny = true; }); break;
+      case "suddendeath": alive.forEach((m) => { m.hp = Math.min(m.hp, Math.round(m.maxHp * 0.4)); }); break;
+      case "goldrain": setCoins((c) => c + 25); break;
+      case "mirror": { const a = alive[Math.floor(Math.random() * alive.length)]; const b = alive[Math.floor(Math.random() * alive.length)]; if (a !== b) { const tmp = a.hp; a.hp = Math.min(a.maxHp, b.hp); b.hp = Math.min(b.maxHp, tmp); } break; }
+      case "zap": { const t = alive[Math.floor(Math.random() * alive.length)]; t.hp = Math.max(1, t.hp - Math.round(t.maxHp * 0.35)); t.hitFlash = now + 400; break; }
+      case "teleport": monsRef.current.forEach((m) => { if (m.hp > 0) { m.pos.x = MON_R + Math.random() * (ARENA_W - MON_R * 2); m.pos.y = MON_R + Math.random() * (ARENA_H - MON_R * 2); } }); break;
+      case "berserk": berserkUntilRef.current = now + 6000; break;
+      case "eclipse": monsRef.current.forEach((m) => { if (m.data.type === "psychic" || m.data.type === "dark" || m.data.type === "ghost") m.data = { ...m.data, baseAtk: Math.round(m.data.baseAtk * 1.25) }; }); break;
+    }
+    pushLog(ev.text, ev.color);
+    setLastEvent({ text: ev.text, color: ev.color, until: now + 3000 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [RANDOM_EVENTS]);
+
+  useEffect(() => {
+    if (screen !== "battle") return;
+    let alive = true;
+    let tid: number | null = null;
+    const tick = () => {
+      if (!alive) return;
+      if (runningRef.current && eventsOnRef.current && status === "fighting") triggerRandomEvent();
+      const delay = (7000 + Math.random() * 7000) / Math.max(1, speedRef.current);
+      tid = window.setTimeout(tick, delay);
+    };
+    tid = window.setTimeout(tick, 6000);
+    return () => { alive = false; if (tid) clearTimeout(tid); };
+  }, [screen, status, triggerRandomEvent]);
+
+
   useEffect(() => { runningRef.current = running; }, [running]);
   useEffect(() => { modeRef.current = mode; }, [mode]);
   useEffect(() => { soundRef.current = soundOn; }, [soundOn]);
