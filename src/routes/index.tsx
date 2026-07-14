@@ -561,6 +561,80 @@ function Game() {
   const pickWinnerAbilityRef = useRef(false); // armed for this battle?
   const synergyRef = useRef<Record<number, number>>({}); // team# -> dmg multiplier
 
+  // ============ Game speed + random events + YouTube HUD ============
+  const [speedMul, setSpeedMul] = useState(1);
+  const speedRef = useRef(1);
+  useEffect(() => { speedRef.current = speedMul; }, [speedMul]);
+  const [eventsOn, setEventsOn] = useState(true);
+  const eventsOnRef = useRef(true);
+  useEffect(() => { eventsOnRef.current = eventsOn; }, [eventsOn]);
+  type StatEntry = { dmg: number; kos: number; name: string; color: string; sprite: string };
+  const statsRef = useRef<Record<string, StatEntry>>({});
+  const koLogRef = useRef<{ t: number; name: string; color: string }[]>([]);
+  const startTimeRef = useRef(0);
+  const [matchSeed, setMatchSeed] = useState<number>(0);
+  const [lastEvent, setLastEvent] = useState<{ text: string; color: string; until: number } | null>(null);
+  const [koCam, setKoCam] = useState<{ name: string; color: string; sprite: string; until: number } | null>(null);
+  const [watermark, setWatermark] = useState("");
+  useEffect(() => { if (typeof window !== "undefined") setWatermark(localStorage.getItem("ppb-watermark") || "@YourChannel"); }, []);
+  useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("ppb-watermark", watermark); }, [watermark]);
+  const [showIntro, setShowIntro] = useState(false);
+
+  const RANDOM_EVENTS = useMemo(() => [
+    { id: "meteor", text: "☄️ METEOR SHOWER — everyone loses 12% HP!", color: "#ff7a3a" },
+    { id: "rain", text: "🌧 HEALING RAIN — all Pokémon regen 18% HP!", color: "#4ea8ff" },
+    { id: "frenzy", text: "🔥 FRENZY MODE — all cooldowns reset!", color: "#ffd83a" },
+    { id: "speedup", text: "💨 SPEED BURST — +30% speed for everyone!", color: "#a0e0ff" },
+    { id: "shinystorm", text: "✨ SHINY STORM — everyone goes shiny!", color: "#ffd83a" },
+    { id: "suddendeath", text: "💀 SUDDEN DEATH — HP capped at 40%!", color: "#ff4a4a" },
+    { id: "goldrain", text: "🪙 GOLD RAIN — +25 bonus coins!", color: "#ffd83a" },
+    { id: "mirror", text: "🔄 MIRROR MATCH — two random mons swap HP!", color: "#d976ff" },
+    { id: "zap", text: "⚡ THUNDERSTORM — random Pokémon zapped for 35% HP!", color: "#fff7a0" },
+    { id: "teleport", text: "🌀 TELEPORT — everyone reshuffled across the arena!", color: "#a17af0" },
+    { id: "berserk", text: "😡 BERSERK — damage output doubled for 6 seconds!", color: "#ff5566" },
+    { id: "eclipse", text: "🌑 ECLIPSE — psychic + dark powers surge!", color: "#8a4dff" },
+  ], []);
+  const berserkUntilRef = useRef(0);
+
+  const triggerRandomEvent = useCallback(() => {
+    const now = performance.now();
+    const alive = monsRef.current.filter((m) => m.hp > 0);
+    if (alive.length < 2) return;
+    const ev = RANDOM_EVENTS[Math.floor(Math.random() * RANDOM_EVENTS.length)];
+    switch (ev.id) {
+      case "meteor": alive.forEach((m) => { m.hp = Math.max(1, m.hp - Math.round(m.maxHp * 0.12)); m.hitFlash = now + 300; }); break;
+      case "rain": alive.forEach((m) => { m.hp = Math.min(m.maxHp, m.hp + Math.round(m.maxHp * 0.18)); }); break;
+      case "frenzy": monsRef.current.forEach((m) => { m.lastAttack = 0; m.lastSpecial = 0; }); break;
+      case "speedup": monsRef.current.forEach((m) => { m.data = { ...m.data, baseSpd: Math.round(m.data.baseSpd * 1.3) }; }); break;
+      case "shinystorm": monsRef.current.forEach((m) => { m.shiny = true; }); break;
+      case "suddendeath": alive.forEach((m) => { m.hp = Math.min(m.hp, Math.round(m.maxHp * 0.4)); }); break;
+      case "goldrain": setCoins((c) => c + 25); break;
+      case "mirror": { const a = alive[Math.floor(Math.random() * alive.length)]; const b = alive[Math.floor(Math.random() * alive.length)]; if (a !== b) { const tmp = a.hp; a.hp = Math.min(a.maxHp, b.hp); b.hp = Math.min(b.maxHp, tmp); } break; }
+      case "zap": { const t = alive[Math.floor(Math.random() * alive.length)]; t.hp = Math.max(1, t.hp - Math.round(t.maxHp * 0.35)); t.hitFlash = now + 400; break; }
+      case "teleport": monsRef.current.forEach((m) => { if (m.hp > 0) { m.pos.x = MON_R + Math.random() * (ARENA_W - MON_R * 2); m.pos.y = MON_R + Math.random() * (ARENA_H - MON_R * 2); } }); break;
+      case "berserk": berserkUntilRef.current = now + 6000; break;
+      case "eclipse": monsRef.current.forEach((m) => { if (m.data.type === "psychic" || m.data.type === "dark" || m.data.type === "ghost") m.data = { ...m.data, baseAtk: Math.round(m.data.baseAtk * 1.25) }; }); break;
+    }
+    pushLog(ev.text, ev.color);
+    setLastEvent({ text: ev.text, color: ev.color, until: now + 3000 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [RANDOM_EVENTS]);
+
+  useEffect(() => {
+    if (screen !== "battle") return;
+    let alive = true;
+    let tid: number | null = null;
+    const tick = () => {
+      if (!alive) return;
+      if (runningRef.current && eventsOnRef.current && status === "fighting") triggerRandomEvent();
+      const delay = (7000 + Math.random() * 7000) / Math.max(1, speedRef.current);
+      tid = window.setTimeout(tick, delay);
+    };
+    tid = window.setTimeout(tick, 6000);
+    return () => { alive = false; if (tid) clearTimeout(tid); };
+  }, [screen, status, triggerRandomEvent]);
+
+
   useEffect(() => { runningRef.current = running; }, [running]);
   useEffect(() => { modeRef.current = mode; }, [mode]);
   useEffect(() => { soundRef.current = soundOn; }, [soundOn]);
@@ -587,7 +661,7 @@ function Game() {
       if (runningRef.current && status === "fighting") step(dt, now);
       // Throttle React renders to ~11fps so HP bars/log update without thrashing.
       // Lower than this triggers a TON of re-rendering with 18 mons.
-      if (now - lastRenderRef.current > 90) {
+      if (now - lastRenderRef.current > 60) {
         lastRenderRef.current = now;
         force((n) => (n + 1) % 1_000_000);
       }
@@ -673,7 +747,9 @@ function Game() {
     void now;
   };
 
-  const step = (dt: number, now: number) => {
+  const step = (dtRaw: number, now: number) => {
+    const speed = speedRef.current;
+    const dt = dtRaw * speed;
     const mons = monsRef.current;
     mons.forEach((m, i) => {
       if (m.hp <= 0) return;
@@ -681,6 +757,7 @@ function Game() {
 
       // Evolution
       m.evolveTimer += dt * 1000;
+
       if (m.evolveEnabled && m.evolveTimer >= evolveMsRef.current) {
         if (d.evolveTo) {
           const next = d.evolveTo;
@@ -745,8 +822,9 @@ function Game() {
       const formMul = d.isGmax ? 1.7 : d.isMega ? 1.6 : (m.plusLevel > 0 ? 1.0 : 1.0); // plus already baked into stats
       const shinyMul = m.shiny ? 1.08 : 1;
       const synMul = synergyRef.current[m.team] ?? 1;
+      const berserkMul = now < berserkUntilRef.current ? 2.0 : 1;
 
-      const atkCd = Math.max(700, ABILITY_COOLDOWN_BASE * (80 / Math.max(20, d.baseSpd)));
+      const atkCd = Math.max(700, ABILITY_COOLDOWN_BASE * (80 / Math.max(20, d.baseSpd))) / speed;
       if (now - m.lastAttack >= atkCd && dist <= ATTACK_RANGE + 60) {
         m.lastAttack = now;
         m.attackFlash = now + 300;
@@ -754,14 +832,14 @@ function Game() {
         const eff = typeMult(d.type, t.data.type);
         const atkMul = 0.7 + 0.6 * (d.baseAtk / 100);
         const defReduction = 1 - Math.min(0.55, t.data.baseDef / 360);
-        const dmg = Math.max(1, Math.round(d.basic.dmg * atkMul * formMul * shinyMul * synMul * (crit ? 1.5 : 1) * eff * defReduction * (0.75 + Math.random() * 0.5)));
+        const dmg = Math.max(1, Math.round(d.basic.dmg * atkMul * formMul * shinyMul * synMul * berserkMul * (crit ? 1.5 : 1) * eff * defReduction * (0.75 + Math.random() * 0.5)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
         if (projectilesRef.current.length < 40) {
           projectilesRef.current.push({
             id: idRef.current++, fromIdx: i, targetIdx: tgt,
             from: { ...m.pos }, pos: { ...m.pos }, angle: ang,
             color: d.color, dmg, crit, kind: d.basic.kind, bornAt: now,
-            duration: d.basic.kind === "lightning" ? 200 : 420,
+            duration: (d.basic.kind === "lightning" ? 200 : 420) / speed,
             eff,
           });
         }
@@ -769,27 +847,28 @@ function Game() {
         if (crit && Math.random() < 0.4) announce(CRIT_LINES[Math.floor(Math.random() * CRIT_LINES.length)], "#ffd83a");
       }
 
-      if (now - m.lastSpecial >= SPECIAL_COOLDOWN_BASE && dist <= ATTACK_RANGE + 120) {
+      if (now - m.lastSpecial >= SPECIAL_COOLDOWN_BASE / speed && dist <= ATTACK_RANGE + 120) {
         m.lastSpecial = now;
         m.attackFlash = now + 400;
         const crit = Math.random() < 0.22;
         const eff = typeMult(d.type, t.data.type);
         const atkMul = 0.8 + 0.6 * (d.baseAtk / 100);
         const defReduction = 1 - Math.min(0.5, t.data.baseDef / 380);
-        const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * formMul * shinyMul * synMul * (crit ? 1.7 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
+        const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * formMul * shinyMul * synMul * berserkMul * (crit ? 1.7 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
         if (projectilesRef.current.length < 40) {
           projectilesRef.current.push({
             id: idRef.current++, fromIdx: i, targetIdx: tgt,
             from: { ...m.pos }, pos: { ...m.pos }, angle: ang,
             color: d.color, dmg, crit, kind: d.signature.kind, bornAt: now,
-            duration: d.signature.kind === "lightning" ? 240 : 500,
+            duration: (d.signature.kind === "lightning" ? 240 : 500) / speed,
             eff,
           });
         }
         pushLog(`★ ${d.name} unleashed ${d.signature.name}! ${crit ? "CRIT " : ""}${dmg}${effLabel(eff)}`, d.color);
         if (soundRef.current) playSound(d.cry, volume * 0.6);
       }
+
 
       if (m.hitFlash && now > m.hitFlash) m.hitFlash = 0;
       if (m.attackFlash && now > m.attackFlash) m.attackFlash = 0;
@@ -805,6 +884,16 @@ function Game() {
         if (tgt && tgt.hp > 0) {
           tgt.hp = Math.max(0, tgt.hp - p.dmg);
           tgt.hitFlash = now + 250;
+          // ---- YouTube stats: track damage per attacker uid ----
+          const attacker = monsRef.current[p.fromIdx];
+          if (attacker) {
+            const key = attacker.data.uid;
+            const cur = statsRef.current[key] ?? { dmg: 0, kos: 0, name: attacker.data.name, color: attacker.data.color, sprite: attacker.data.sprite };
+            cur.dmg += p.dmg;
+            cur.name = attacker.data.name; cur.color = attacker.data.color; cur.sprite = attacker.data.sprite;
+            if (tgt.hp === 0) cur.kos += 1;
+            statsRef.current[key] = cur;
+          }
           popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 28, value: p.dmg, crit: p.crit, bornAt: now, color: p.crit ? "#ffd83a" : "#ff5566" });
           if (p.eff !== undefined && p.eff >= 2) {
             popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 52, value: 0, crit: true, bornAt: now, color: "#ffd83a" });
@@ -816,9 +905,12 @@ function Game() {
           if (tgt.hp === 0) {
             pushLog(`${tgt.data.name} was knocked out!`, "var(--color-muted-foreground)");
             if (Math.random() < 0.5) announce(`${tgt.data.name} ${KO_LINES[Math.floor(Math.random() * KO_LINES.length)]}`, "#ffd83a");
+            koLogRef.current.push({ t: performance.now() - startTimeRef.current, name: tgt.data.name, color: tgt.data.color });
+            setKoCam({ name: tgt.data.name, color: tgt.data.color, sprite: tgt.data.sprite, until: now + 1400 });
             killed = true;
           }
         }
+
 
       } else {
         const cur = tgt && tgt.hp > 0 ? tgt.pos : p.from;
@@ -1024,6 +1116,17 @@ function Game() {
       evolveMsRef.current = evolveSec * 1000;
       if (typeof window !== "undefined") (window as unknown as { __ppbEvolveMs?: number }).__ppbEvolveMs = evolveSec * 1000;
 
+      // Reset YouTube HUD / stats / KO log / intro
+      statsRef.current = {};
+      koLogRef.current = [];
+      startTimeRef.current = performance.now();
+      berserkUntilRef.current = 0;
+      setLastEvent(null); setKoCam(null);
+      setMatchSeed(Math.floor(Math.random() * 1_000_000));
+      setShowIntro(true);
+      setTimeout(() => setShowIntro(false), 3200);
+
+
       let resolvedTarget: string | null = null;
       if (betAmount > 0 && betAmount <= coins && betTarget) {
         if (mode === "teams" && (betTarget === "team-0" || betTarget === "team-1")) resolvedTarget = betTarget;
@@ -1128,7 +1231,14 @@ function Game() {
       shop={shop}
       onManualEvolve={manualEvolveOne}
       backToLobby={() => { setScreen("lobby"); setStatus("fighting"); setBetTarget(null); }}
+      hud={{
+        speedMul, setSpeedMul, eventsOn, setEventsOn,
+        statsRef, koLogRef, startTimeRef,
+        lastEvent, koCam, watermark, setWatermark,
+        showIntro, matchSeed,
+      }}
     />
+
   );
 }
 
@@ -1669,6 +1779,18 @@ function Shop({ coins, setCoins, shop, setShop, onClose }: {
 // ============================================================
 // Battle screen (with pause-and-drag)
 // ============================================================
+type BattleHud = {
+  speedMul: number; setSpeedMul: (n: number) => void;
+  eventsOn: boolean; setEventsOn: (b: boolean) => void;
+  statsRef: React.MutableRefObject<Record<string, { dmg: number; kos: number; name: string; color: string; sprite: string }>>;
+  koLogRef: React.MutableRefObject<{ t: number; name: string; color: string }[]>;
+  startTimeRef: React.MutableRefObject<number>;
+  lastEvent: { text: string; color: string; until: number } | null;
+  koCam: { name: string; color: string; sprite: string; until: number } | null;
+  watermark: string; setWatermark: (s: string) => void;
+  showIntro: boolean;
+  matchSeed: number;
+};
 function Battle(props: {
   monsRef: React.MutableRefObject<MonState[]>;
   projectilesRef: React.MutableRefObject<Projectile[]>;
@@ -1680,8 +1802,10 @@ function Battle(props: {
   shop: ShopState;
   onManualEvolve: () => void;
   backToLobby: () => void;
+  hud: BattleHud;
 }) {
-  const { monsRef, projectilesRef, popsRef, mode, log, status, winnerIdx, winnerTeam, running, setRunning, payout, coins, shop, onManualEvolve, backToLobby } = props;
+  const { monsRef, projectilesRef, popsRef, mode, log, status, winnerIdx, winnerTeam, running, setRunning, payout, coins, shop, onManualEvolve, backToLobby, hud } = props;
+
   const mons = monsRef.current;
   const now = performance.now();
   const arenaRef = useRef<HTMLDivElement | null>(null);
@@ -1754,13 +1878,23 @@ function Battle(props: {
     <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-3 p-3 sm:p-5">
       <header className="flex items-end justify-between gap-3">
         <div>
-          <h1 className="text-[10px] tracking-wider text-primary sm:text-sm">BATTLE</h1>
+          <h1 className="text-[10px] tracking-wider text-primary sm:text-sm">
+            BATTLE #{hud.matchSeed.toString().padStart(6, "0")} · ⏱ {formatMs(now - hud.startTimeRef.current)}
+          </h1>
           <p className="mt-1 text-[7px] text-muted-foreground sm:text-[9px]">
-            {mode === "teams" ? "Team Battle" : `${mons.length}-way FFA`} · COINS {coins}
+            {matchTitle(mons, mode)} · COINS {coins}
             {!running && " · PAUSED (drag mons to reposition)"}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button onClick={() => {
+            const cycle = [1, 1.5, 2, 3];
+            const next = cycle[(cycle.indexOf(hud.speedMul) + 1) % cycle.length];
+            hud.setSpeedMul(next);
+          }} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">⏩ Speed {hud.speedMul}x</button>
+          <button onClick={() => hud.setEventsOn(!hud.eventsOn)} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">
+            🎲 Events {hud.eventsOn ? "ON" : "OFF"}
+          </button>
           {shop.abilityManualEvolve > 0 && status === "fighting" && (
             <button onClick={onManualEvolve} className="rounded border-2 border-border bg-primary px-3 py-2 text-[8px] text-primary-foreground sm:text-[10px]">⚡ Evolve ({shop.abilityManualEvolve})</button>
           )}
@@ -1778,6 +1912,7 @@ function Battle(props: {
           </button>
         </div>
       </header>
+
 
       <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(mons.length, 8)}, minmax(0,1fr))` }}>
         {mons.map((m, i) => {
@@ -1905,10 +2040,39 @@ function Battle(props: {
 
         </div>
 
+        {/* Watermark overlay for YouTube branding */}
+        {hud.watermark && (
+          <div className="pointer-events-none absolute bottom-2 right-3 text-[9px] sm:text-[11px]"
+            style={{ color: "rgba(255,255,255,0.75)", textShadow: "0 1px 2px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.6)" }}>
+            {hud.watermark}
+          </div>
+        )}
+
+        {/* Random event banner */}
+        {hud.lastEvent && now < hud.lastEvent.until && (
+          <div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded border-2 bg-background/85 px-3 py-2 text-center text-[9px] sm:text-[11px]"
+            style={{ borderColor: hud.lastEvent.color, color: hud.lastEvent.color, boxShadow: `0 0 20px ${hud.lastEvent.color}` }}>
+            {hud.lastEvent.text}
+          </div>
+        )}
+
+        {/* KO cam splash */}
+        {hud.koCam && now < hud.koCam.until && (
+          <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center">
+            <div className="rounded border-4 bg-background/70 px-6 py-3" style={{ borderColor: hud.koCam.color, boxShadow: `0 0 40px ${hud.koCam.color}` }}>
+              <img src={hud.koCam.sprite} alt="" className="mx-auto h-24 w-24" style={{ imageRendering: "pixelated", filter: `drop-shadow(0 0 12px ${hud.koCam.color})` }} />
+              <p className="mt-1 text-center text-[12px] sm:text-[16px]" style={{ color: hud.koCam.color, textShadow: "0 0 6px black" }}>K.O.! {hud.koCam.name}</p>
+            </div>
+          </div>
+        )}
+
+        {/* 3-2-1 intro countdown */}
+        {hud.showIntro && <IntroCountdown startedAt={hud.startTimeRef.current} />}
+
         {status === "ended" && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70">
             <WinFx kind={shop.selectedFx} color={winnerTeam !== null ? TEAM_COLORS[winnerTeam] : (winnerIdx !== null ? mons[winnerIdx].data.color : "#ffd83a")} />
-            <div className="relative z-20 rounded border-2 border-border bg-panel px-5 py-4 text-center">
+            <div className="relative z-20 max-h-[92%] w-[92%] max-w-md overflow-auto rounded border-2 border-border bg-panel px-4 py-3 text-center">
               {winnerTeam !== null ? (
                 <>
                   <p className="text-[10px] sm:text-sm" style={{ color: TEAM_COLORS[winnerTeam] }}>{TEAM_NAMES[winnerTeam]} WINS!</p>
@@ -1931,13 +2095,41 @@ function Battle(props: {
                   {payout > 0 ? `+${payout}` : payout} coins (balance: {coins})
                 </p>
               )}
-              <button onClick={backToLobby} className="mt-2 rounded border-2 border-border bg-primary px-3 py-2 text-[9px] text-primary-foreground hover:brightness-110 sm:text-[10px]">
-                Back to Lobby
-              </button>
+
+              {/* MVP + damage leaderboard */}
+              <MvpPanel statsRef={hud.statsRef} />
+
+              {/* Chapter markers (KO timestamps) */}
+              {hud.koLogRef.current.length > 0 && (
+                <div className="mt-2 rounded border border-border bg-background/60 p-2 text-left">
+                  <p className="mb-1 text-[7px] text-primary sm:text-[9px]">📺 CHAPTERS (KO timeline)</p>
+                  <ul className="max-h-24 space-y-0.5 overflow-auto text-[7px] leading-tight sm:text-[8px]">
+                    {hud.koLogRef.current.map((k, i) => (
+                      <li key={i} style={{ color: k.color }}>{formatMs(k.t)} — {k.name} KO'd</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Watermark editor + copy summary */}
+              <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+                <input value={hud.watermark} onChange={(e) => hud.setWatermark(e.target.value)} placeholder="@YourChannel"
+                  className="rounded border-2 border-border bg-background px-2 py-1 text-[8px] sm:text-[9px]" />
+                <button onClick={() => copyMatchSummary(hud, mons, winnerIdx, winnerTeam, mode)}
+                  className="rounded border-2 border-border bg-muted px-3 py-1 text-[8px] sm:text-[9px]">📋 Copy YouTube Summary</button>
+              </div>
+
+              <div className="mt-2 flex justify-center gap-2">
+                <button onClick={() => location.reload()} className="rounded border-2 border-border bg-muted px-3 py-2 text-[9px] sm:text-[10px]">🔁 Rematch</button>
+                <button onClick={backToLobby} className="rounded border-2 border-border bg-primary px-3 py-2 text-[9px] text-primary-foreground hover:brightness-110 sm:text-[10px]">
+                  Back to Lobby
+                </button>
+              </div>
             </div>
           </div>
         )}
       </div>
+
 
       <section className="rounded-md border-2 border-border bg-panel p-3">
         <p className="mb-2 text-[8px] text-primary sm:text-[10px]">BATTLE LOG</p>
@@ -1950,7 +2142,92 @@ function Battle(props: {
 }
 
 // ============================================================
+// ============================================================
+// YouTube HUD helpers
+// ============================================================
+function formatMs(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const mm = Math.floor(s / 60);
+  const ss = s % 60;
+  return `${mm}:${ss.toString().padStart(2, "0")}`;
+}
+function matchTitle(mons: MonState[], mode: Mode): string {
+  if (mode === "teams") return `Team Battle · ${mons.length} mons`;
+  const names = mons.slice(0, 6).map((m) => m.data.name.replace(/^✦+/, ""));
+  const extra = mons.length > 6 ? ` +${mons.length - 6} more` : "";
+  return `${names.join(" vs ")}${extra}`;
+}
+function IntroCountdown({ startedAt }: { startedAt: number }) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((t) => t + 1), 100);
+    return () => clearInterval(id);
+  }, []);
+  const elapsed = performance.now() - startedAt;
+  const step = elapsed < 900 ? "3" : elapsed < 1800 ? "2" : elapsed < 2700 ? "1" : "FIGHT!";
+  const color = step === "FIGHT!" ? "#ffd83a" : "#fff";
+  void tick;
+  return (
+    <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
+      <div className="anim-evolve rounded-full px-8 py-6 text-4xl sm:text-6xl"
+        style={{ color, textShadow: "0 0 20px rgba(0,0,0,0.9), 0 0 40px currentColor" }}>
+        {step}
+      </div>
+    </div>
+  );
+}
+function MvpPanel({ statsRef }: { statsRef: React.MutableRefObject<Record<string, { dmg: number; kos: number; name: string; color: string; sprite: string }>> }) {
+  const entries = Object.values(statsRef.current).sort((a, b) => b.dmg - a.dmg).slice(0, 5);
+  if (entries.length === 0) return null;
+  const mvp = entries[0];
+  return (
+    <div className="mt-2 rounded border border-border bg-background/60 p-2 text-left">
+      <p className="mb-1 text-center text-[8px] text-primary sm:text-[10px]">🏆 MVP: {mvp.name} — {mvp.dmg} dmg · {mvp.kos} KO</p>
+      <ul className="space-y-0.5 text-[7px] leading-tight sm:text-[8px]">
+        {entries.map((e, i) => (
+          <li key={i} className="flex items-center gap-1" style={{ color: e.color }}>
+            <img src={e.sprite} alt="" className="h-4 w-4" style={{ imageRendering: "pixelated" }} />
+            <span>#{i + 1} {e.name} — {e.dmg} dmg · {e.kos} KO</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+function copyMatchSummary(
+  hud: BattleHud,
+  mons: MonState[],
+  winnerIdx: number | null,
+  winnerTeam: number | null,
+  mode: Mode,
+) {
+  const entries = Object.values(hud.statsRef.current).sort((a, b) => b.dmg - a.dmg);
+  const winner = winnerTeam !== null ? TEAM_NAMES[winnerTeam] : (winnerIdx !== null ? mons[winnerIdx].data.name : "DRAW");
+  const dur = formatMs(performance.now() - hud.startTimeRef.current);
+  const chapters = hud.koLogRef.current.map((k) => `${formatMs(k.t)} — ${k.name} KO'd`).join("\n");
+  const leaderboard = entries.slice(0, 5).map((e, i) => `${i + 1}. ${e.name} — ${e.dmg} dmg · ${e.kos} KO`).join("\n");
+  const text = [
+    `🔥 ${matchTitle(mons, mode)}`,
+    `🏆 Winner: ${winner}   ⏱ ${dur}   🎲 Battle #${hud.matchSeed.toString().padStart(6, "0")}`,
+    "",
+    "📺 Chapters:",
+    chapters || "0:00 — Start",
+    "",
+    "🏅 MVP leaderboard:",
+    leaderboard,
+    "",
+    hud.watermark ? `👉 ${hud.watermark}` : "",
+    "#Pokemon #AutoBattler #PixelPocketBrawl",
+  ].filter(Boolean).join("\n");
+  if (typeof navigator !== "undefined" && navigator.clipboard) {
+    navigator.clipboard.writeText(text).catch(() => {});
+  }
+  alert("YouTube summary copied to clipboard!\n\n" + text);
+}
+
+// ============================================================
 // Projectile FX
+
 // ============================================================
 function ProjectileFx({ p, now }: { p: Projectile; now: number }) {
   const deg = (p.angle * 180) / Math.PI;
