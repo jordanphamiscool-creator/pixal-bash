@@ -1878,13 +1878,23 @@ function Battle(props: {
     <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-3 p-3 sm:p-5">
       <header className="flex items-end justify-between gap-3">
         <div>
-          <h1 className="text-[10px] tracking-wider text-primary sm:text-sm">BATTLE</h1>
+          <h1 className="text-[10px] tracking-wider text-primary sm:text-sm">
+            BATTLE #{hud.matchSeed.toString().padStart(6, "0")} · ⏱ {formatMs(now - hud.startTimeRef.current)}
+          </h1>
           <p className="mt-1 text-[7px] text-muted-foreground sm:text-[9px]">
-            {mode === "teams" ? "Team Battle" : `${mons.length}-way FFA`} · COINS {coins}
+            {matchTitle(mons, mode)} · COINS {coins}
             {!running && " · PAUSED (drag mons to reposition)"}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button onClick={() => {
+            const cycle = [1, 1.5, 2, 3];
+            const next = cycle[(cycle.indexOf(hud.speedMul) + 1) % cycle.length];
+            hud.setSpeedMul(next);
+          }} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">⏩ Speed {hud.speedMul}x</button>
+          <button onClick={() => hud.setEventsOn(!hud.eventsOn)} className="rounded border-2 border-border bg-muted px-3 py-2 text-[8px] sm:text-[10px]">
+            🎲 Events {hud.eventsOn ? "ON" : "OFF"}
+          </button>
           {shop.abilityManualEvolve > 0 && status === "fighting" && (
             <button onClick={onManualEvolve} className="rounded border-2 border-border bg-primary px-3 py-2 text-[8px] text-primary-foreground sm:text-[10px]">⚡ Evolve ({shop.abilityManualEvolve})</button>
           )}
@@ -1902,6 +1912,7 @@ function Battle(props: {
           </button>
         </div>
       </header>
+
 
       <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(mons.length, 8)}, minmax(0,1fr))` }}>
         {mons.map((m, i) => {
