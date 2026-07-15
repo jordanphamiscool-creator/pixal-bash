@@ -1,103 +1,53 @@
 
-Huge batch. Grouping into 6 chunks, all edits confined to `src/routes/index.tsx` + `src/styles.css`. No new packages.
+Big batch of fixes + features for `src/routes/index.tsx` and `src/styles.css`. One mode (the existing auto-battler) gets a lot of polish, plus a new lightweight "Catch & Gym" mode scaffolded so we can flesh it out next round.
 
-## 1. Battle engine upgrades
+## 1. Power & evolution rebalance
+- **Mega forms**: damage ×1.6, HP ×1.5 (was ~1.3/1.3).
+- **G-Max forms**: damage ×1.7, HP ×1.8 (chonky, hard hits).
+- **Plus Evolution** (new tier between normal final and Mega/G-Max): when a Pokémon has no Mega/Gmax/regional variety available, the evolution timer instead grants "+ Form": damage ×1.25, HP ×1.25, speed ×1.1, glowing aura, prefix "✦". Cheaper than Mega so picking a Caterpie still isn't useless.
+- All applied as multipliers on the existing `MonData` at evolve time.
 
-- **45s Sudden Damage**: at `matchTime >= 45s`, apply a global `damageMult = 2` to every attack (both sides). Banner: "⚔️ SUDDEN DAMAGE — ×2!". Stacks with events.
-- **Crits**: every attack rolls crit chance = `min(0.35, 0.05 + speed/400 + (isSpecial?0.05:0))`. Crits do ×1.75, show gold "CRIT!" popup + brief screen shake.
-- **Multi-move loadout**: each mon gets 3 moves picked from a per-type pool (Tackle-tier basic + 2 flashy). AI picks weighted by cooldown/HP context. Move object: `{name, power, type, effect?, anim}`.
-- **Status effects**:
-  - `burn` – tick 3% max HP/s, orange flame overlay, ×0.85 dmg dealt.
-  - `poison` – tick 4% max HP/s (ramping), purple bubbles.
-  - `freeze` – 30% chance skip attack, blue ice tint, thaws over 4s.
-  - `paralyze` – 25% skip, yellow spark tint.
-  - Applied by move `effect` field (e.g. Flamethrower 20% burn). Icons under HP bar.
-- **Per-move animations** (each is a distinct CSS/DOM effect, not a recolored bolt):
-  - Flame stream, water pulse, leaf spiral, lightning strike from sky, ice shards, psychic wave, shadow orb, rock throw arc, dragon beam, poison cloud, punch dash, bite lunge, hyper-beam laser. Registered in a `MOVE_FX` map keyed by move name → renderer.
-- **Fight during countdown**: remove the `if (countdown>0) return` guard in `step()`; only lock movement, allow idle animations + wandering. Actually — user wants them to *fight*: allow full combat, just show the countdown banner overlaid. Simpler: fights start immediately, countdown becomes cosmetic HUD.
+## 2. Lobby QoL
+- **Delete All Selected** button next to the picker.
+- **Infinite Coins** toggle (dev/test) → sets coins to 999,999 and locks writes.
+- **Coin floor**: every shop purchase and every losing bet clamps balance to **≥ 10**. Bets above `coins - 10` are auto-capped. Shop buttons disable if `coins - price < 10`.
+- **Custom lobby background**: upload image (data URL, `localStorage["ppb-lobby-bg"]`) + reset-to-default button. Already partly stubbed; finishing the UI.
+- **Pick more than battle size**: if `picks.length > battleSize`, randomly draw `battleSize` from picks at battle start (keep team distribution where possible).
 
-## 2. Event visualizations (real, not just text)
+## 3. Sorting fixes
+- **Type filter bug**: today it only checks `mon.type` which is the primary type stored on the curated list. Fix: load secondary types from PokéAPI (`/pokemon/{id}`), cache, and match on either; also widen the per-gen catalog so filtering by Type across "All gens" actually iterates all 1025 ids, not just the curated subset.
+- Add **"Evolutions" sort**: bucket 1/2/3/4, where 4 = has any of Mega/G-Max/Regional/Plus past the base. Computed from species `varieties` + chain length.
+- Verify Generation + Rarity filters still apply on top of Type (currently they short-circuit) — combine with AND, not OR.
 
-Each event triggers an on-screen effect:
-- **Meteor shower** → 8 meteors fall from top, on impact each hits nearest mon for 15 dmg + burn 20%.
-- **Thunder strike** → 3 lightning bolts from sky pick random mons, 25 dmg + 40% paralyze.
-- **Healing rain** → blue droplets fall over arena, +2 HP/s to all for 6s.
-- **Blizzard** → snow drift + 15% freeze roll per mon.
-- **Sandstorm** → sand haze overlay, 5 dmg/s to non-Rock/Ground.
-- **Earthquake** → arena shakes, 20 dmg to all grounded.
-- **Solar flare** → white flash + Fire moves ×2 for 8s.
-- **Shiny storm** → all sprites get gold/hue-rotate for 10s (visual only).
-- **Teleport chaos** → all mons swap positions with a warp flash.
-- **Frenzy** → red aura, attack cooldowns ×0.4 for 6s.
-- **Sudden death** → HP bars drain 5%/s until KO.
-- **Double XP** → gold particles + evolve timers ×0.3.
+## 4. Performance
+- Drop React state updates from ~30fps → **15fps** for non-critical UI (HP bars, timers). Projectile rendering stays at rAF via direct DOM refs (escape hatch: `useRef` + `transform` writes, no re-render).
+- Replace per-frame `.filter()`/`.map()` allocations in `step()` with index loops + in-place splicing.
+- Skip `<img>` re-render by keying purely on `mon.uid` and never mutating the src attr; sprite swap on evolve uses a separate layer.
+- Stop reading `localStorage` inside render — read once, keep in state.
 
-All rendered via an events-layer div with keyframed elements.
+## 5. Special attack coverage
+- Extend `SPECIALS` map so every species 1..1025 either has a hand-picked entry or maps via a deterministic `signatureFor(id, type)` that picks from a per-type pool of ~6 named moves (e.g. Electric → Thunderbolt / Volt Tackle / Zap Cannon / Discharge / Wild Charge / Spark). Result: no two Pokémon of the same type share the same exact name unless coincident, and every mon shows a real move name.
 
-## 3. Twenty flashiness / dopamine features
+## 6. Battle screen polish
+- **Next-evolution countdown**: small badge under each mon showing `Evo in 8s` (or `Mega in 8s` / `Plus in 8s`) using the per-mon `evolveTimer`. Hides when no evolution path.
+- **Rotom (#479)**: every 3 seconds, rotate sprite + type + signature across its forms (Heat/Wash/Frost/Fan/Mow). Implemented as a per-mon "morph" interval set up at battle start when `speciesId === 479`.
+- **Fullscreen button**: requests fullscreen on the arena wrapper via `el.requestFullscreen()` and scales the arena to viewport with CSS `transform: scale(fit)`.
 
-1. Combo counter (chains of hits within 1.5s), on-screen "×5 COMBO!" with escalating pitch color.
-2. Kill streak announcer: "DOUBLE KO!", "TRIPLE KO!", "RAMPAGE!".
-3. Screen shake on crits + KOs (CSS var driven).
-4. Chromatic aberration flash on Sudden Damage / KO.
-5. Hit-stop: 80ms freeze frame on crits.
-6. Slow-mo final blow: last 20% HP of last enemy → 0.5× time for 1.2s.
-7. Damage-number stacking with escalating font-size per combo hit.
-8. Confetti + fireworks on victory (already partial, expand to 6s + sparks).
-9. Announcer text banner ("Pikachu is on fire!" after 3 kills).
-10. Type-effectiveness popup ("Super Effective!" in colored badge, "Not very effective…").
-11. Move-name banner slides in bottom when a special fires.
-12. Rainbow shiny trail on any mon over 5 KOs.
-13. Boss aura on last-standing mon (pulsing red glow).
-14. Camera zoom-in on 1v1 last duel.
-15. Ambient particle drift matching arena theme (grass motes, snowflakes, embers).
-16. Hype meter bar filling per hit; when full → 10s "OVERDRIVE" (all ×1.3 dmg).
-17. Random crowd cheer SFX substitute via Web Audio bleeps on KO (togglable).
-18. On-hit color splashes matching move type.
-19. Post-match "Play of the Game" — replays the single biggest damage event as a slowed animation.
-20. Score ticker in header (kills / dmg dealt live, per team).
+## 7. New mode: Catch & Gym (scaffold)
+- New top-level screen toggle in lobby: **Auto-Battler** | **Catch & Gym**.
+- Catch & Gym v1 (scaffold only — playable loop, not a full game):
+  - **Starter pick** (3 starters from a random gen).
+  - **Grass walking**: arrow keys / on-screen dpad on a tiny 10×10 grid, random encounter → mini battle (reuses the existing battle engine, 1v1) → "Throw Pokéball" button with catch chance based on remaining HP %.
+  - **Team box**: caught Pokémon stored in `localStorage["ppb-team"]`, max 6 active.
+  - **Gym Leaders**: 4 placeholder gyms (Rock/Water/Electric/Grass leaders), each a 3v3 fight. Beat all 4 → "Champion" screen.
+  - Stats AND type matchups matter heavily here: damage formula uses real `atk/def` ratios (no flattening), and crit chance scales with speed.
+  - Abilities: pull `abilities[0]` from PokéAPI per mon; light effect map (e.g. Blaze → +20% fire dmg under 33% HP, Torrent same for water, Static → 20% chance to paralyze on hit = skip one attack). Unmapped abilities just display the name.
+- This mode lives in the same file under `screen === "catch"` so the existing game is untouched.
 
-## 4. Catch & Gym fixes + 10 new ideas
-
-**Fix**: Wild Pokémon actually attack back. Currently the wild mon just stands there. Rework `CGBattle`:
-- Turn-based: player picks Fight (menu of 4 moves) / Bag / Ball / Run.
-- On Fight: player move → damage w/ crit + status → wild mon retaliates with its own move (from pool) → tick statuses.
-- Wild mon HP bar, level, name shown.
-- Gym leader battles: 3v3, wild mon behavior applied to each leader mon in sequence.
-
-**Gym perks bugfix**: currently perks are gated by quiz/win but never toggled on. On `beatGym(gymId)`:
-```
-setPerks(p => ({...p, [PERKS[gymId]]: true}))
-```
-And gate map interactions (`canCut`, `canSurf`, `canStrength`, `canFly`) on the perks object, not on a variable that's never updated. Also persist to localStorage.
-
-**10 new C&G ideas**:
-1. **Shiny hunt** – 1/512 chance per encounter, sparkle SFX, ×2 sell/trade value.
-2. **Egg hatching** – daycare gives egg after 200 steps, hatches to random starter.
-3. **Weather on overworld** – rain boosts Water spawns, sun boosts Fire.
-4. **Time-of-day evolutions** – Eevee → Umbreon at night, Espeon at day.
-5. **Contest hall** – mini rhythm game, wins ribbons.
-6. **Safari zone** – no damage, throw-only, timer + step limit.
-7. **Battle Tower** – 21 straight fights with rental teams, leaderboard.
-8. **Regional variants** – Alolan/Galarian forms as separate catches.
-9. **Trade evolutions** – Machoke → Machamp via NPC trader.
-10. **Team battle mode** – 2v2 doubles with spread moves.
-
-## 5. Files & effort
-
+## 8. Files
 ```text
-src/routes/index.tsx     ← ~90% of the work
-src/styles.css           ← ~20 new keyframes / classes (meteors, lightning, rain, shake, aberration, combo pop, boss aura, particles)
+src/routes/index.tsx      ← almost all changes
+src/styles.css            ← .anim-plus-aura, .fullscreen-arena
 ```
 
-## 6. Technical notes
-
-- `MOVES` registry: `Record<string, { name; type; power; cd; effect?: StatusKind; effectChance?; fx: FxKind }>`.
-- `MOVE_FX`: `Record<FxKind, (opts)=>DOMEffect>` – imperatively appends absolutely-positioned divs to arena and removes on animation end.
-- Status stored on `MonData`: `statuses: {kind, until, tickAt}[]`.
-- Event visuals share the same DOM-effect helper.
-- Speed multiplier already exists; new global `damageMult` folds in at 45s.
-- Combat during countdown: drop the early-return in `step()`, keep countdown as HUD only.
-- Perks: single `perks` state object persisted to `localStorage["ppb-perks"]`.
-
-Big diff but self-contained. Ready to build on approval.
+No new packages, no backend. All persistent state via `localStorage`.

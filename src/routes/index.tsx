@@ -580,34 +580,6 @@ function Game() {
   useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("ppb-watermark", watermark); }, [watermark]);
   const [showIntro, setShowIntro] = useState(false);
 
-  // FX queue: imperative visual effects pushed by events + big hits
-  type FxEvent =
-    | { kind: "meteor"; id: number; x: number; born: number }
-    | { kind: "bolt"; id: number; x: number; born: number }
-    | { kind: "rain"; id: number; until: number }
-    | { kind: "snow"; id: number; until: number }
-    | { kind: "sand"; id: number; until: number }
-    | { kind: "quake"; id: number; until: number }
-    | { kind: "flare"; id: number; until: number }
-    | { kind: "warp"; id: number; born: number }
-    | { kind: "aura"; id: number; until: number; color: string }
-    | { kind: "gold"; id: number; born: number }
-    | { kind: "shake"; id: number; until: number; strength: number }
-    | { kind: "critText"; id: number; x: number; y: number; born: number }
-    | { kind: "combo"; id: number; born: number; n: number };
-  const fxRef = useRef<FxEvent[]>([]);
-  const pushFx = (fx: Partial<FxEvent> & { kind: FxEvent["kind"] }) => {
-    (fxRef.current as FxEvent[]).push({ ...(fx as unknown as FxEvent), id: idRef.current++ });
-    if (fxRef.current.length > 120) fxRef.current.splice(0, fxRef.current.length - 120);
-  };
-
-  // Sudden-damage state (×2 after 45s)
-  const suddenDmgRef = useRef(false);
-  // Combo counter
-  const comboRef = useRef({ count: 0, until: 0 });
-  // Hype meter (fills with damage, unlocks OVERDRIVE)
-  const hypeRef = useRef({ value: 0, overdriveUntil: 0 });
-
   const RANDOM_EVENTS = useMemo(() => [
     { id: "meteor", text: "☄️ METEOR SHOWER — everyone loses 12% HP!", color: "#ff7a3a" },
     { id: "rain", text: "🌧 HEALING RAIN — all Pokémon regen 18% HP!", color: "#4ea8ff" },
@@ -630,56 +602,18 @@ function Game() {
     if (alive.length < 2) return;
     const ev = RANDOM_EVENTS[Math.floor(Math.random() * RANDOM_EVENTS.length)];
     switch (ev.id) {
-      case "meteor":
-        alive.forEach((m) => { m.hp = Math.max(1, m.hp - Math.round(m.maxHp * 0.12)); m.hitFlash = now + 300; });
-        for (let i = 0; i < 10; i++) pushFx({ kind: "meteor", x: Math.random() * ARENA_W, born: now + i * 90 });
-        pushFx({ kind: "shake", until: now + 900, strength: 10 });
-        break;
-      case "rain":
-        alive.forEach((m) => { m.hp = Math.min(m.maxHp, m.hp + Math.round(m.maxHp * 0.18)); });
-        pushFx({ kind: "rain", until: now + 6000 });
-        break;
-      case "frenzy":
-        monsRef.current.forEach((m) => { m.lastAttack = 0; m.lastSpecial = 0; });
-        pushFx({ kind: "aura", until: now + 4000, color: "#ffd83a" });
-        break;
-      case "speedup":
-        monsRef.current.forEach((m) => { m.data = { ...m.data, baseSpd: Math.round(m.data.baseSpd * 1.3) }; });
-        pushFx({ kind: "aura", until: now + 3000, color: "#a0e0ff" });
-        break;
-      case "shinystorm":
-        monsRef.current.forEach((m) => { m.shiny = true; });
-        pushFx({ kind: "gold", born: now });
-        pushFx({ kind: "flare", until: now + 800 });
-        break;
-      case "suddendeath":
-        alive.forEach((m) => { m.hp = Math.min(m.hp, Math.round(m.maxHp * 0.4)); });
-        pushFx({ kind: "shake", until: now + 800, strength: 14 });
-        pushFx({ kind: "aura", until: now + 3000, color: "#ff4a4a" });
-        break;
-      case "goldrain": setCoins((c) => c + 25); pushFx({ kind: "gold", born: now }); break;
-      case "mirror": { const a = alive[Math.floor(Math.random() * alive.length)]; const b = alive[Math.floor(Math.random() * alive.length)]; if (a !== b) { const tmp = a.hp; a.hp = Math.min(a.maxHp, b.hp); b.hp = Math.min(b.maxHp, tmp); } pushFx({ kind: "warp", born: now }); break; }
-      case "zap": {
-        const t = alive[Math.floor(Math.random() * alive.length)];
-        t.hp = Math.max(1, t.hp - Math.round(t.maxHp * 0.35)); t.hitFlash = now + 400;
-        pushFx({ kind: "bolt", x: t.pos.x, born: now });
-        // extra sky-strikes on random targets
-        for (let i = 0; i < 2; i++) {
-          const s = alive[Math.floor(Math.random() * alive.length)];
-          pushFx({ kind: "bolt", x: s.pos.x, born: now + 200 + i * 200 });
-        }
-        pushFx({ kind: "flare", until: now + 400 });
-        break;
-      }
-      case "teleport":
-        monsRef.current.forEach((m) => { if (m.hp > 0) { m.pos.x = MON_R + Math.random() * (ARENA_W - MON_R * 2); m.pos.y = MON_R + Math.random() * (ARENA_H - MON_R * 2); } });
-        pushFx({ kind: "warp", born: now });
-        break;
-      case "berserk": berserkUntilRef.current = now + 6000; pushFx({ kind: "aura", until: now + 6000, color: "#ff5566" }); pushFx({ kind: "shake", until: now + 500, strength: 6 }); break;
-      case "eclipse":
-        monsRef.current.forEach((m) => { if (m.data.type === "psychic" || m.data.type === "dark" || m.data.type === "ghost") m.data = { ...m.data, baseAtk: Math.round(m.data.baseAtk * 1.25) }; });
-        pushFx({ kind: "aura", until: now + 3500, color: "#8a4dff" });
-        break;
+      case "meteor": alive.forEach((m) => { m.hp = Math.max(1, m.hp - Math.round(m.maxHp * 0.12)); m.hitFlash = now + 300; }); break;
+      case "rain": alive.forEach((m) => { m.hp = Math.min(m.maxHp, m.hp + Math.round(m.maxHp * 0.18)); }); break;
+      case "frenzy": monsRef.current.forEach((m) => { m.lastAttack = 0; m.lastSpecial = 0; }); break;
+      case "speedup": monsRef.current.forEach((m) => { m.data = { ...m.data, baseSpd: Math.round(m.data.baseSpd * 1.3) }; }); break;
+      case "shinystorm": monsRef.current.forEach((m) => { m.shiny = true; }); break;
+      case "suddendeath": alive.forEach((m) => { m.hp = Math.min(m.hp, Math.round(m.maxHp * 0.4)); }); break;
+      case "goldrain": setCoins((c) => c + 25); break;
+      case "mirror": { const a = alive[Math.floor(Math.random() * alive.length)]; const b = alive[Math.floor(Math.random() * alive.length)]; if (a !== b) { const tmp = a.hp; a.hp = Math.min(a.maxHp, b.hp); b.hp = Math.min(b.maxHp, tmp); } break; }
+      case "zap": { const t = alive[Math.floor(Math.random() * alive.length)]; t.hp = Math.max(1, t.hp - Math.round(t.maxHp * 0.35)); t.hitFlash = now + 400; break; }
+      case "teleport": monsRef.current.forEach((m) => { if (m.hp > 0) { m.pos.x = MON_R + Math.random() * (ARENA_W - MON_R * 2); m.pos.y = MON_R + Math.random() * (ARENA_H - MON_R * 2); } }); break;
+      case "berserk": berserkUntilRef.current = now + 6000; break;
+      case "eclipse": monsRef.current.forEach((m) => { if (m.data.type === "psychic" || m.data.type === "dark" || m.data.type === "ghost") m.data = { ...m.data, baseAtk: Math.round(m.data.baseAtk * 1.25) }; }); break;
     }
     pushLog(ev.text, ev.color);
     setLastEvent({ text: ev.text, color: ev.color, until: now + 3000 });
@@ -889,19 +823,6 @@ function Game() {
       const shinyMul = m.shiny ? 1.08 : 1;
       const synMul = synergyRef.current[m.team] ?? 1;
       const berserkMul = now < berserkUntilRef.current ? 2.0 : 1;
-      // Sudden Damage: after 45 seconds, everyone deals ×2 damage
-      const matchElapsed = now - startTimeRef.current;
-      const suddenMul = matchElapsed >= 45000 ? 2 : 1;
-      if (suddenMul === 2 && !suddenDmgRef.current) {
-        suddenDmgRef.current = true;
-        setLastEvent({ text: "⚔️ SUDDEN DAMAGE — ×2 for everyone!", color: "#ff4a4a", until: now + 4000 });
-        pushLog("⚔️ SUDDEN DAMAGE activated: ×2 damage!", "#ff4a4a");
-        pushFx({ kind: "shake", until: now + 700, strength: 12 });
-        pushFx({ kind: "flare", until: now + 500 });
-        pushFx({ kind: "aura", until: now + 4000, color: "#ff4a4a" });
-      }
-      // Hype meter → OVERDRIVE
-      const overdriveMul = now < hypeRef.current.overdriveUntil ? 1.3 : 1;
 
       const atkCd = Math.max(700, ABILITY_COOLDOWN_BASE * (80 / Math.max(20, d.baseSpd))) / speed;
       if (now - m.lastAttack >= atkCd && dist <= ATTACK_RANGE + 60) {
@@ -911,7 +832,7 @@ function Game() {
         const eff = typeMult(d.type, t.data.type);
         const atkMul = 0.7 + 0.6 * (d.baseAtk / 100);
         const defReduction = 1 - Math.min(0.55, t.data.baseDef / 360);
-        const dmg = Math.max(1, Math.round(d.basic.dmg * atkMul * formMul * shinyMul * synMul * berserkMul * suddenMul * overdriveMul * (crit ? 1.75 : 1) * eff * defReduction * (0.75 + Math.random() * 0.5)));
+        const dmg = Math.max(1, Math.round(d.basic.dmg * atkMul * formMul * shinyMul * synMul * berserkMul * (crit ? 1.5 : 1) * eff * defReduction * (0.75 + Math.random() * 0.5)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
         if (projectilesRef.current.length < 40) {
           projectilesRef.current.push({
@@ -933,7 +854,7 @@ function Game() {
         const eff = typeMult(d.type, t.data.type);
         const atkMul = 0.8 + 0.6 * (d.baseAtk / 100);
         const defReduction = 1 - Math.min(0.5, t.data.baseDef / 380);
-        const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * formMul * shinyMul * synMul * berserkMul * suddenMul * overdriveMul * (crit ? 1.85 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
+        const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * formMul * shinyMul * synMul * berserkMul * (crit ? 1.7 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
         if (projectilesRef.current.length < 40) {
           projectilesRef.current.push({
@@ -974,26 +895,6 @@ function Game() {
             statsRef.current[key] = cur;
           }
           popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 28, value: p.dmg, crit: p.crit, bornAt: now, color: p.crit ? "#ffd83a" : "#ff5566" });
-          // Combo counter
-          if (now < comboRef.current.until) comboRef.current.count += 1; else comboRef.current.count = 1;
-          comboRef.current.until = now + 1500;
-          if (comboRef.current.count >= 3 && comboRef.current.count % 3 === 0) {
-            pushFx({ kind: "combo", born: now, n: comboRef.current.count });
-          }
-          // Hype meter (fills with damage, unlocks 8s OVERDRIVE at 100)
-          hypeRef.current.value += p.dmg;
-          if (hypeRef.current.value >= 800 && now >= hypeRef.current.overdriveUntil) {
-            hypeRef.current.value = 0;
-            hypeRef.current.overdriveUntil = now + 8000;
-            setLastEvent({ text: "🚀 OVERDRIVE — ×1.3 damage for 8s!", color: "#ffd83a", until: now + 3000 });
-            pushFx({ kind: "aura", until: now + 8000, color: "#ffd83a" });
-            pushFx({ kind: "flare", until: now + 500 });
-          }
-          // Crit visual
-          if (p.crit) {
-            pushFx({ kind: "critText", x: tgt.pos.x, y: tgt.pos.y - 60, born: now });
-            pushFx({ kind: "shake", until: now + 220, strength: 6 });
-          }
           if (p.eff !== undefined && p.eff >= 2) {
             popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 52, value: 0, crit: true, bornAt: now, color: "#ffd83a" });
           } else if (p.eff !== undefined && p.eff > 0 && p.eff <= 0.5) {
@@ -1219,10 +1120,6 @@ function Game() {
       statsRef.current = {};
       koLogRef.current = [];
       startTimeRef.current = performance.now();
-      suddenDmgRef.current = false;
-      comboRef.current = { count: 0, until: 0 };
-      hypeRef.current = { value: 0, overdriveUntil: 0 };
-      fxRef.current.length = 0;
       berserkUntilRef.current = 0;
       setLastEvent(null); setKoCam(null);
       setMatchSeed(Math.floor(Math.random() * 1_000_000));
@@ -1339,7 +1236,6 @@ function Game() {
         statsRef, koLogRef, startTimeRef,
         lastEvent, koCam, watermark, setWatermark,
         showIntro, matchSeed,
-        fxRef, hypeRef, comboRef, suddenDmgRef,
       }}
     />
 
@@ -1894,10 +1790,6 @@ type BattleHud = {
   watermark: string; setWatermark: (s: string) => void;
   showIntro: boolean;
   matchSeed: number;
-  fxRef: React.MutableRefObject<Array<{ kind: string; id: number; x?: number; y?: number; born?: number; until?: number; color?: string; strength?: number; n?: number }>>;
-  hypeRef: React.MutableRefObject<{ value: number; overdriveUntil: number }>;
-  comboRef: React.MutableRefObject<{ count: number; until: number }>;
-  suddenDmgRef: React.MutableRefObject<boolean>;
 };
 function Battle(props: {
   monsRef: React.MutableRefObject<MonState[]>;
@@ -2051,21 +1943,6 @@ function Battle(props: {
 
       <div ref={arenaRef} className="arena-wrap relative w-full overflow-hidden rounded-xl border-4 border-border" style={{ aspectRatio: `${ARENA_W} / ${ARENA_H}` }}>
         <div className={`${bgCls} absolute inset-0`} />
-        <FxLayer fxRef={hud.fxRef} now={now} />
-        {/* Hype meter + Combo HUD */}
-        <div className="pointer-events-none absolute left-2 top-2 z-20 w-40">
-          <div className="mb-1 text-[7px] text-[#ffd83a]" style={{ textShadow: "0 1px 2px black" }}>
-            HYPE {now < hud.hypeRef.current.overdriveUntil ? "· 🚀 OVERDRIVE" : ""}
-          </div>
-          <div className="h-2 w-full overflow-hidden rounded border border-border bg-black/60">
-            <div className="h-full bg-[#ffd83a] transition-[width]" style={{ width: `${Math.min(100, (hud.hypeRef.current.value / 800) * 100)}%` }} />
-          </div>
-          {now < hud.comboRef.current.until && hud.comboRef.current.count >= 2 && (
-            <div className="mt-1 text-[9px] font-bold" style={{ color: "#ffd83a", textShadow: "0 0 6px black" }}>
-              ×{hud.comboRef.current.count} COMBO
-            </div>
-          )}
-        </div>
         <div className="relative h-full w-full">
           <svg viewBox={`0 0 ${ARENA_W} ${ARENA_H}`} className="absolute inset-0 h-full w-full pointer-events-none" preserveAspectRatio="xMidYMid meet">
             <defs>
@@ -2280,116 +2157,6 @@ function matchTitle(mons: MonState[], mode: Mode): string {
   const extra = mons.length > 6 ? ` +${mons.length - 6} more` : "";
   return `${names.join(" vs ")}${extra}`;
 }
-function FxLayer({ fxRef, now }: { fxRef: BattleHud["fxRef"]; now: number }) {
-  // Prune expired
-  const items = fxRef.current;
-  for (let i = items.length - 1; i >= 0; i--) {
-    const f = items[i];
-    const life =
-      f.kind === "meteor" ? 900 :
-      f.kind === "bolt" ? 550 :
-      f.kind === "warp" ? 700 :
-      f.kind === "gold" ? 3500 :
-      f.kind === "critText" ? 700 :
-      f.kind === "combo" ? 900 :
-      f.kind === "flare" ? 500 : 0;
-    if (life > 0 && f.born !== undefined && now - f.born > life) items.splice(i, 1);
-    else if (f.until !== undefined && now > f.until) items.splice(i, 1);
-  }
-  const shake = items.find((f) => f.kind === "shake");
-  const shakeStyle: React.CSSProperties = shake
-    ? { transform: `translate(${(Math.random() - 0.5) * (shake.strength || 6)}px, ${(Math.random() - 0.5) * (shake.strength || 6)}px)` }
-    : {};
-  return (
-    <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden" style={shakeStyle}>
-      {items.map((f) => {
-        if (f.kind === "meteor" && f.x !== undefined && f.born !== undefined) {
-          const dt = Math.max(0, now - f.born);
-          if (dt < 0) return null;
-          const t = Math.min(1, dt / 700);
-          return (
-            <div key={f.id} className="absolute" style={{
-              left: `${(f.x / ARENA_W) * 100}%`, top: `${t * 100}%`,
-              width: 20, height: 20, transform: "translate(-50%,-50%)",
-              background: "radial-gradient(circle,#fff 0%,#ffaa2a 40%,#ff3a1a 100%)",
-              borderRadius: "50%",
-              boxShadow: "0 0 20px #ff6a2a, 0 -30px 40px 5px rgba(255,120,40,0.5)",
-              filter: `blur(${(1 - t) * 1}px)`,
-              opacity: t > 0.95 ? 0 : 1,
-            }} />
-          );
-        }
-        if (f.kind === "bolt" && f.x !== undefined && f.born !== undefined) {
-          const dt = now - f.born;
-          const opacity = dt < 100 ? dt / 100 : dt < 400 ? 1 : Math.max(0, 1 - (dt - 400) / 150);
-          return (
-            <div key={f.id} className="absolute top-0" style={{
-              left: `${(f.x / ARENA_W) * 100}%`, transform: "translateX(-50%)",
-              width: 6, height: "100%",
-              background: "linear-gradient(180deg,#fff 0%,#ffd83a 60%,transparent 100%)",
-              boxShadow: "0 0 24px #fff, 0 0 60px #ffd83a", opacity,
-            }} />
-          );
-        }
-        if (f.kind === "rain") {
-          return <div key={f.id} className="absolute inset-0"
-            style={{ backgroundImage: "repeating-linear-gradient(100deg, rgba(160,220,255,0.35) 0 2px, transparent 2px 8px)", animation: "rain-fall 0.4s linear infinite" }} />;
-        }
-        if (f.kind === "snow") {
-          return <div key={f.id} className="absolute inset-0"
-            style={{ backgroundImage: "radial-gradient(circle at 20% 30%, #fff 0 2px, transparent 3px), radial-gradient(circle at 60% 70%, #fff 0 2px, transparent 3px), radial-gradient(circle at 80% 20%, #fff 0 2px, transparent 3px)", animation: "snow-fall 1.2s linear infinite" }} />;
-        }
-        if (f.kind === "sand") {
-          return <div key={f.id} className="absolute inset-0" style={{ background: "linear-gradient(90deg, rgba(220,170,80,0.25), rgba(220,170,80,0.4))", mixBlendMode: "multiply" }} />;
-        }
-        if (f.kind === "flare") {
-          return <div key={f.id} className="absolute inset-0" style={{ background: "rgba(255,255,255,0.75)", animation: "fx-flare 0.5s ease-out forwards" }} />;
-        }
-        if (f.kind === "aura" && f.color) {
-          return <div key={f.id} className="absolute inset-0" style={{ boxShadow: `inset 0 0 60px 20px ${f.color}`, opacity: 0.6 }} />;
-        }
-        if (f.kind === "warp") {
-          return <div key={f.id} className="absolute inset-0" style={{ background: "radial-gradient(circle,#a17af0 0%,transparent 70%)", animation: "fx-warp 0.7s ease-out forwards" }} />;
-        }
-        if (f.kind === "gold") {
-          return (
-            <div key={f.id} className="absolute inset-0">
-              {Array.from({ length: 24 }).map((_, i) => (
-                <div key={i} className="absolute" style={{
-                  left: `${(i * 37) % 100}%`, top: "-10%",
-                  width: 8, height: 12, background: "#ffd83a",
-                  boxShadow: "0 0 6px #ffd83a",
-                  animation: `winfx-fall ${1.5 + (i % 5) * 0.3}s linear ${i * 0.05}s forwards`,
-                }} />
-              ))}
-            </div>
-          );
-        }
-        if (f.kind === "critText" && f.x !== undefined && f.y !== undefined) {
-          return (
-            <div key={f.id} className="absolute font-bold" style={{
-              left: `${(f.x / ARENA_W) * 100}%`, top: `${(f.y / ARENA_H) * 100}%`,
-              transform: "translate(-50%,-50%)", fontSize: 24,
-              color: "#ffd83a", textShadow: "0 0 8px #000, 0 0 12px #ffd83a",
-              animation: "fx-crit 0.7s ease-out forwards",
-            }}>CRIT!</div>
-          );
-        }
-        if (f.kind === "combo" && f.n !== undefined) {
-          return (
-            <div key={f.id} className="absolute left-1/2 top-16" style={{
-              transform: "translateX(-50%)", fontSize: 28, fontWeight: 900,
-              color: "#ffd83a", textShadow: "0 0 10px #000, 0 0 20px #ffd83a",
-              animation: "fx-combo 0.9s ease-out forwards",
-            }}>×{f.n} COMBO!</div>
-          );
-        }
-        return null;
-      })}
-    </div>
-  );
-}
-
 function IntroCountdown({ startedAt }: { startedAt: number }) {
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -2664,10 +2431,6 @@ type Encounter = {
   message: string;
   kind: "wild" | "trainer" | "legendary" | "champion";
   trainerKey?: string;
-  playerHp?: number;
-  playerMaxHp?: number;
-  playerStatus?: "burn" | "poison" | "paralyze" | "freeze" | null;
-  wildStatus?: "burn" | "poison" | "paralyze" | "freeze" | null;
 };
 type Inventory = {
   bike: boolean;
@@ -2863,9 +2626,7 @@ function CatchGym({ onClose, onChallengeGym }: {
       const mon = await fetchMon(id, `wild-${id}-${Date.now()}`);
       if (!mon) return;
       const maxHp = Math.round(60 + mon.baseHp * (isNight ? 1.15 : 1));
-      const shiny = Math.random() < (1/512);
-      const pMax = playerMon ? Math.round(80 + playerMon.baseHp * 1.2) : 100;
-      setEncounter({ id, mon, hp: maxHp, maxHp, message: `A wild ${shiny ? "✨SHINY " : ""}${swarmActive ? "🌊 SWARM " : ""}${isNight ? "🌙 " : ""}${mon.name} appeared!`, kind: "wild", playerHp: pMax, playerMaxHp: pMax, playerStatus: null, wildStatus: null });
+      setEncounter({ id, mon, hp: maxHp, maxHp, message: `A wild ${swarmActive ? "🌊 SWARM " : ""}${isNight ? "🌙 " : ""}${mon.name} appeared!`, kind: "wild" });
     } finally { setBusy(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [swarm, isNight, inv.repel]);
@@ -2878,8 +2639,7 @@ function CatchGym({ onClose, onChallengeGym }: {
       const mon = await fetchMon(id, `npc-${id}-${Date.now()}`);
       if (!mon) return;
       const maxHp = Math.round(70 + mon.baseHp * 1.2);
-      const pMax = playerMon ? Math.round(80 + playerMon.baseHp * 1.2) : 100;
-      setEncounter({ id, mon, hp: maxHp, maxHp, message: `👤 Trainer sends out ${mon.name}! Beat it for coins.`, kind: "trainer", trainerKey: nkey, playerHp: pMax, playerMaxHp: pMax });
+      setEncounter({ id, mon, hp: maxHp, maxHp, message: `👤 Trainer sends out ${mon.name}! Beat it for coins.`, kind: "trainer", trainerKey: nkey });
     } finally { setBusy(false); }
   }, [trainersDone]);
 
@@ -2996,114 +2756,32 @@ function CatchGym({ onClose, onChallengeGym }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [move]);
 
-  // Available player moves with type + optional status effect
-  const PLAYER_MOVES = [
-    { name: "Tackle", type: null as string | null, power: 1.0, status: null as null | "burn" | "poison" | "paralyze" | "freeze", statusChance: 0 },
-    { name: "Flame Strike", type: "fire", power: 1.15, status: "burn" as const, statusChance: 0.3 },
-    { name: "Aqua Pulse", type: "water", power: 1.1, status: null, statusChance: 0 },
-    { name: "Thunder Jolt", type: "electric", power: 1.15, status: "paralyze" as const, statusChance: 0.35 },
-    { name: "Ice Fang", type: "ice", power: 1.1, status: "freeze" as const, statusChance: 0.25 },
-    { name: "Toxic Sting", type: "poison", power: 0.95, status: "poison" as const, statusChance: 0.5 },
-  ] as const;
-  const attackWildMove = (moveIdx: number) => {
+  const attackWild = () => {
     if (!encounter || !playerMon) return;
-    const move = PLAYER_MOVES[moveIdx];
-    // Player statuses can lock the attack
-    let msg = "";
-    if (encounter.playerStatus === "freeze" && Math.random() < 0.4) {
-      msg = `❄ ${playerMon.name} is frozen and can't move!`;
-      setEncounter({ ...encounter, message: msg });
-      wildRetaliate(encounter);
-      return;
-    }
-    if (encounter.playerStatus === "paralyze" && Math.random() < 0.25) {
-      msg = `⚡ ${playerMon.name} is paralyzed! Attack failed.`;
-      setEncounter({ ...encounter, message: msg });
-      wildRetaliate(encounter);
-      return;
-    }
-    const moveType = (move.type ?? playerMon.type) as ElementType;
-    const eff = typeMult(moveType, encounter.mon.type);
-    const dojoBonus = 1 + (Math.min(6, inv.potions) * 0.02);
-    const crit = Math.random() < 0.15;
-    const stab = moveType === playerMon.type ? 1.2 : 1;
+    const eff = typeMult(playerMon.type, encounter.mon.type);
+    const dojoBonus = 1 + (Math.min(6, inv.potions) * 0.02); // playful nod to EV training
     const base = 15 + Math.floor(Math.random() * 20) + Math.round(playerMon.baseAtk * 0.08);
-    const dmg = Math.max(4, Math.round(base * move.power * eff * dojoBonus * stab * (crit ? 1.7 : 1)));
+    const dmg = Math.max(4, Math.round(base * eff * dojoBonus));
     const hp = Math.max(0, encounter.hp - dmg);
-    const label = `${crit ? " CRIT!" : ""}${eff >= 2 ? " (super effective!)" : eff <= 0.5 ? " (not very effective)" : ""}`;
-    // Try to apply status
-    let newWildStatus = encounter.wildStatus ?? null;
-    if (move.status && !newWildStatus && Math.random() < move.statusChance) {
-      newWildStatus = move.status;
-      msg = `${playerMon.name} used ${move.name}! ${dmg} dmg${label} · ${encounter.mon.name} is ${move.status}ed!`;
-    } else {
-      msg = `${playerMon.name} used ${move.name}! ${dmg} dmg${label}`;
-    }
+    const label = eff >= 2 ? " (super effective!)" : eff <= 0.5 ? " (not very effective)" : "";
     if (hp === 0) {
       if (encounter.kind === "trainer" && encounter.trainerKey) {
         setTrainersDone((s) => { const n = new Set(s); n.add(encounter.trainerKey!); return n; });
-        setEncounter({ ...encounter, hp, wildStatus: newWildStatus, message: `You beat the trainer! ${dmg} dmg${label} — +25 coins!` });
+        setEncounter({ ...encounter, hp, message: `You beat the trainer! ${dmg} dmg${label} — +25 coins!` });
         bumpCoins(25);
       } else if (encounter.kind === "legendary") {
-        setEncounter({ ...encounter, hp, wildStatus: newWildStatus, message: `${encounter.mon.name} is weak — try a Poké Ball!` });
+        setEncounter({ ...encounter, hp, message: `${encounter.mon.name} is weak — try a Poké Ball!` });
         return;
       } else if (encounter.kind === "champion") {
-        setEncounter({ ...encounter, hp, wildStatus: newWildStatus, message: `Challenger defeated! +100 coins!` });
+        setEncounter({ ...encounter, hp, message: `Challenger defeated! ${dmg} dmg${label} — +100 coins!` });
         bumpCoins(100); setDefenses((d) => d + 1);
       } else {
-        setEncounter({ ...encounter, hp, wildStatus: newWildStatus, message: `${encounter.mon.name} fainted! ${dmg} dmg${label}` });
+        setEncounter({ ...encounter, hp, message: `${encounter.mon.name} fainted! ${dmg} dmg${label}` });
       }
-      setTimeout(() => setEncounter(null), 1400);
-      return;
+      setTimeout(() => setEncounter(null), 1300);
+    } else {
+      setEncounter({ ...encounter, hp, message: `You dealt ${dmg} dmg${label}` });
     }
-    // Wild retaliates
-    wildRetaliate({ ...encounter, hp, wildStatus: newWildStatus, message: msg });
-  };
-  const attackWild = () => attackWildMove(0);
-
-  const wildRetaliate = (enc: Encounter) => {
-    if (!playerMon) { setEncounter(enc); return; }
-    // Status ticks first
-    let wildHp = enc.hp;
-    let playerHp = enc.playerHp ?? 100;
-    const playerMax = enc.playerMaxHp ?? 100;
-    let tickMsg = "";
-    if (enc.wildStatus === "burn") { const t = Math.max(1, Math.round(enc.maxHp * 0.06)); wildHp = Math.max(0, wildHp - t); tickMsg += ` 🔥-${t}`; }
-    if (enc.wildStatus === "poison") { const t = Math.max(1, Math.round(enc.maxHp * 0.08)); wildHp = Math.max(0, wildHp - t); tickMsg += ` ☠-${t}`; }
-    if (wildHp === 0) {
-      setEncounter({ ...enc, hp: 0, message: `${enc.mon.name} fainted from status damage!${tickMsg}` });
-      setTimeout(() => setEncounter(null), 1400);
-      return;
-    }
-    if (enc.playerStatus === "burn") { const t = Math.max(1, Math.round(playerMax * 0.06)); playerHp = Math.max(0, playerHp - t); }
-    if (enc.playerStatus === "poison") { const t = Math.max(1, Math.round(playerMax * 0.08)); playerHp = Math.max(0, playerHp - t); }
-    // Wild picks a move
-    const wildFrozen = enc.wildStatus === "freeze" && Math.random() < 0.4;
-    const wildPara = enc.wildStatus === "paralyze" && Math.random() < 0.3;
-    let retMsg = "";
-    if (wildFrozen) retMsg = `${enc.mon.name} is frozen solid!`;
-    else if (wildPara) retMsg = `${enc.mon.name} is paralyzed and couldn't move!`;
-    else {
-      const wildPool = PLAYER_MOVES.filter(m => !m.type || m.type === enc.mon.type);
-      const wm = wildPool[Math.floor(Math.random() * wildPool.length)];
-      const wmType = (wm.type ?? enc.mon.type) as ElementType;
-      const wEff = typeMult(wmType, playerMon.type);
-      const wCrit = Math.random() < 0.12;
-      const wBase = 10 + Math.floor(Math.random() * 14) + Math.round(enc.mon.baseAtk * 0.08);
-      const wDmg = Math.max(3, Math.round(wBase * wm.power * wEff * (wCrit ? 1.7 : 1) * (enc.wildStatus === "burn" ? 0.85 : 1)));
-      playerHp = Math.max(0, playerHp - wDmg);
-      retMsg = `${enc.mon.name} used ${wm.name}! ${wDmg} dmg${wCrit ? " CRIT" : ""}`;
-      if (wm.status && !enc.playerStatus && Math.random() < wm.statusChance) {
-        enc = { ...enc, playerStatus: wm.status };
-        retMsg += ` · ${playerMon.name} is ${wm.status}ed!`;
-      }
-    }
-    if (playerHp === 0) {
-      setEncounter({ ...enc, hp: wildHp, playerHp: 0, message: `${playerMon.name} fainted! You fled to the last center.${tickMsg} ${retMsg}` });
-      setTimeout(() => setEncounter(null), 1600);
-      return;
-    }
-    setEncounter({ ...enc, hp: wildHp, playerHp, message: `${enc.message}${tickMsg} · ${retMsg}` });
   };
 
   const useBerry = () => {
@@ -3182,8 +2860,8 @@ function CatchGym({ onClose, onChallengeGym }: {
       }
       await onChallengeGym(my.slice(0, 3), gymTeam);
       if (!beaten.includes(g.id)) {
-        setBeaten((b) => { const nb = [...b, g.id]; try { lsSet("ppb-beaten", nb); } catch { /* ignore */ } return nb; });
-        // Grant perk (also persist immediately in case of unmount)
+        setBeaten((b) => [...b, g.id]);
+        // Grant perk
         setInv((i) => {
           const n = { ...i };
           if (g.id === "brock") n.cutBadge = true;
@@ -3194,11 +2872,9 @@ function CatchGym({ onClose, onChallengeGym }: {
           if (g.id === "sabrina") n.seeBadge = true;
           if (g.id === "blaine") n.flyBadge = true;
           if (g.id === "giovanni") n.eliteUnlocked = true;
-          try { lsSet("ppb-inv", n); } catch { /* ignore */ }
           return n;
         });
         bumpCoins(g.reward);
-        alert(`🏅 You beat ${g.name}! Perk unlocked. Check your Trainer Card.`);
       }
     } finally { setBusy(false); }
   };
@@ -3414,39 +3090,26 @@ function CatchGym({ onClose, onChallengeGym }: {
                     <div className="h-1.5 w-24 overflow-hidden rounded bg-background">
                       <div className="h-full" style={{ width: `${(encounter.hp / encounter.maxHp) * 100}%`, background: encounter.hp > encounter.maxHp * 0.4 ? "var(--color-hp)" : "var(--color-hp-low)" }} />
                     </div>
-                    <p className="text-muted-foreground">{encounter.hp}/{encounter.maxHp} HP · {encounter.mon.type}{encounter.wildStatus ? ` · ${encounter.wildStatus.toUpperCase()}` : ""}</p>
+                    <p className="text-muted-foreground">{encounter.hp}/{encounter.maxHp} HP · {encounter.mon.type}</p>
                   </div>
                   <div className="flex flex-col items-center">
                     {playerMon ? (
                       <>
                         <img src={playerMon.sprite} alt={playerMon.name} className="h-20 w-20" style={{ imageRendering: "pixelated" }} />
                         <p style={{ color: playerMon.color }}>{playerMon.name}</p>
-                        <div className="h-1.5 w-24 overflow-hidden rounded bg-background">
-                          <div className="h-full" style={{
-                            width: `${((encounter.playerHp ?? 100) / (encounter.playerMaxHp ?? 100)) * 100}%`,
-                            background: (encounter.playerHp ?? 100) > (encounter.playerMaxHp ?? 100) * 0.4 ? "var(--color-hp)" : "var(--color-hp-low)"
-                          }} />
-                        </div>
-                        <p className="text-muted-foreground">{encounter.playerHp ?? "?"}/{encounter.playerMaxHp ?? "?"} HP{encounter.playerStatus ? ` · ${encounter.playerStatus.toUpperCase()}` : ""}</p>
+                        <p className="text-muted-foreground">You · Berries {inv.berries}</p>
                       </>
                     ) : <p className="text-muted-foreground">Loading…</p>}
                   </div>
                 </div>
-                <div className="mb-2 grid grid-cols-2 gap-1">
-                  {PLAYER_MOVES.map((m, i) => (
-                    <button key={m.name} onClick={() => attackWildMove(i)} disabled={!playerMon}
-                      className="rounded border-2 border-border bg-muted px-2 py-1 text-[7px] disabled:opacity-40 sm:text-[8px]">
-                      {m.name}{m.status ? ` (${m.status})` : ""}
-                    </button>
-                  ))}
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <button onClick={throwBall} disabled={encounter.kind === "trainer" || encounter.kind === "champion"} className="rounded border-2 border-border bg-primary px-2 py-2 text-primary-foreground disabled:opacity-40">◉ Ball</button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={attackWild} disabled={!playerMon} className="rounded border-2 border-border bg-accent px-2 py-2 text-primary-foreground disabled:opacity-40">⚔ Attack</button>
+                  <button onClick={throwBall} disabled={encounter.kind === "trainer" || encounter.kind === "champion"} className="rounded border-2 border-border bg-primary px-2 py-2 text-primary-foreground disabled:opacity-40">◉ Throw Poké Ball</button>
                   <button onClick={useBerry} disabled={inv.berries <= 0} className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px] disabled:opacity-40">🍒 Berry ({inv.berries})</button>
                   <button onClick={flee} className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px]">🏃 Run</button>
                 </div>
                 <p className="mt-2 text-center text-[7px] text-muted-foreground">
-                  Catch chance ≈ {Math.round(Math.max(0.05, (0.95 - (encounter.hp / encounter.maxHp) * 0.8) * (encounter.kind === "legendary" ? 0.35 : 1) + (inv.catchBadge ? 0.1 : 0)) * 100)}% · Infinite Poké Balls
+                  Catch chance ≈ {Math.round(Math.max(0.05, (0.95 - (encounter.hp / encounter.maxHp) * 0.8) * (encounter.kind === "legendary" ? 0.35 : 1) + (inv.catchBadge ? 0.1 : 0)) * 100)}%
                 </p>
               </div>
             </div>
