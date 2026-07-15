@@ -889,6 +889,19 @@ function Game() {
       const shinyMul = m.shiny ? 1.08 : 1;
       const synMul = synergyRef.current[m.team] ?? 1;
       const berserkMul = now < berserkUntilRef.current ? 2.0 : 1;
+      // Sudden Damage: after 45 seconds, everyone deals ×2 damage
+      const matchElapsed = now - startTimeRef.current;
+      const suddenMul = matchElapsed >= 45000 ? 2 : 1;
+      if (suddenMul === 2 && !suddenDmgRef.current) {
+        suddenDmgRef.current = true;
+        setLastEvent({ text: "⚔️ SUDDEN DAMAGE — ×2 for everyone!", color: "#ff4a4a", until: now + 4000 });
+        pushLog("⚔️ SUDDEN DAMAGE activated: ×2 damage!", "#ff4a4a");
+        pushFx({ kind: "shake", until: now + 700, strength: 12 });
+        pushFx({ kind: "flare", until: now + 500 });
+        pushFx({ kind: "aura", until: now + 4000, color: "#ff4a4a" });
+      }
+      // Hype meter → OVERDRIVE
+      const overdriveMul = now < hypeRef.current.overdriveUntil ? 1.3 : 1;
 
       const atkCd = Math.max(700, ABILITY_COOLDOWN_BASE * (80 / Math.max(20, d.baseSpd))) / speed;
       if (now - m.lastAttack >= atkCd && dist <= ATTACK_RANGE + 60) {
