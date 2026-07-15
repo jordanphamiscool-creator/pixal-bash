@@ -3412,26 +3412,39 @@ function CatchGym({ onClose, onChallengeGym }: {
                     <div className="h-1.5 w-24 overflow-hidden rounded bg-background">
                       <div className="h-full" style={{ width: `${(encounter.hp / encounter.maxHp) * 100}%`, background: encounter.hp > encounter.maxHp * 0.4 ? "var(--color-hp)" : "var(--color-hp-low)" }} />
                     </div>
-                    <p className="text-muted-foreground">{encounter.hp}/{encounter.maxHp} HP · {encounter.mon.type}</p>
+                    <p className="text-muted-foreground">{encounter.hp}/{encounter.maxHp} HP · {encounter.mon.type}{encounter.wildStatus ? ` · ${encounter.wildStatus.toUpperCase()}` : ""}</p>
                   </div>
                   <div className="flex flex-col items-center">
                     {playerMon ? (
                       <>
                         <img src={playerMon.sprite} alt={playerMon.name} className="h-20 w-20" style={{ imageRendering: "pixelated" }} />
                         <p style={{ color: playerMon.color }}>{playerMon.name}</p>
-                        <p className="text-muted-foreground">You · Berries {inv.berries}</p>
+                        <div className="h-1.5 w-24 overflow-hidden rounded bg-background">
+                          <div className="h-full" style={{
+                            width: `${((encounter.playerHp ?? 100) / (encounter.playerMaxHp ?? 100)) * 100}%`,
+                            background: (encounter.playerHp ?? 100) > (encounter.playerMaxHp ?? 100) * 0.4 ? "var(--color-hp)" : "var(--color-hp-low)"
+                          }} />
+                        </div>
+                        <p className="text-muted-foreground">{encounter.playerHp ?? "?"}/{encounter.playerMaxHp ?? "?"} HP{encounter.playerStatus ? ` · ${encounter.playerStatus.toUpperCase()}` : ""}</p>
                       </>
                     ) : <p className="text-muted-foreground">Loading…</p>}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button onClick={attackWild} disabled={!playerMon} className="rounded border-2 border-border bg-accent px-2 py-2 text-primary-foreground disabled:opacity-40">⚔ Attack</button>
-                  <button onClick={throwBall} disabled={encounter.kind === "trainer" || encounter.kind === "champion"} className="rounded border-2 border-border bg-primary px-2 py-2 text-primary-foreground disabled:opacity-40">◉ Throw Poké Ball</button>
+                <div className="mb-2 grid grid-cols-2 gap-1">
+                  {PLAYER_MOVES.map((m, i) => (
+                    <button key={m.name} onClick={() => attackWildMove(i)} disabled={!playerMon}
+                      className="rounded border-2 border-border bg-muted px-2 py-1 text-[7px] disabled:opacity-40 sm:text-[8px]">
+                      {m.name}{m.status ? ` (${m.status})` : ""}
+                    </button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <button onClick={throwBall} disabled={encounter.kind === "trainer" || encounter.kind === "champion"} className="rounded border-2 border-border bg-primary px-2 py-2 text-primary-foreground disabled:opacity-40">◉ Ball</button>
                   <button onClick={useBerry} disabled={inv.berries <= 0} className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px] disabled:opacity-40">🍒 Berry ({inv.berries})</button>
                   <button onClick={flee} className="rounded border-2 border-border bg-muted px-2 py-1 text-[8px]">🏃 Run</button>
                 </div>
                 <p className="mt-2 text-center text-[7px] text-muted-foreground">
-                  Catch chance ≈ {Math.round(Math.max(0.05, (0.95 - (encounter.hp / encounter.maxHp) * 0.8) * (encounter.kind === "legendary" ? 0.35 : 1) + (inv.catchBadge ? 0.1 : 0)) * 100)}%
+                  Catch chance ≈ {Math.round(Math.max(0.05, (0.95 - (encounter.hp / encounter.maxHp) * 0.8) * (encounter.kind === "legendary" ? 0.35 : 1) + (inv.catchBadge ? 0.1 : 0)) * 100)}% · Infinite Poké Balls
                 </p>
               </div>
             </div>
