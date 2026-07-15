@@ -1199,6 +1199,10 @@ function Game() {
       statsRef.current = {};
       koLogRef.current = [];
       startTimeRef.current = performance.now();
+      suddenDmgRef.current = false;
+      comboRef.current = { count: 0, until: 0 };
+      hypeRef.current = { value: 0, overdriveUntil: 0 };
+      fxRef.current.length = 0;
       berserkUntilRef.current = 0;
       setLastEvent(null); setKoCam(null);
       setMatchSeed(Math.floor(Math.random() * 1_000_000));
