@@ -974,6 +974,26 @@ function Game() {
             statsRef.current[key] = cur;
           }
           popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 28, value: p.dmg, crit: p.crit, bornAt: now, color: p.crit ? "#ffd83a" : "#ff5566" });
+          // Combo counter
+          if (now < comboRef.current.until) comboRef.current.count += 1; else comboRef.current.count = 1;
+          comboRef.current.until = now + 1500;
+          if (comboRef.current.count >= 3 && comboRef.current.count % 3 === 0) {
+            pushFx({ kind: "combo", born: now, n: comboRef.current.count });
+          }
+          // Hype meter (fills with damage, unlocks 8s OVERDRIVE at 100)
+          hypeRef.current.value += p.dmg;
+          if (hypeRef.current.value >= 800 && now >= hypeRef.current.overdriveUntil) {
+            hypeRef.current.value = 0;
+            hypeRef.current.overdriveUntil = now + 8000;
+            setLastEvent({ text: "🚀 OVERDRIVE — ×1.3 damage for 8s!", color: "#ffd83a", until: now + 3000 });
+            pushFx({ kind: "aura", until: now + 8000, color: "#ffd83a" });
+            pushFx({ kind: "flare", until: now + 500 });
+          }
+          // Crit visual
+          if (p.crit) {
+            pushFx({ kind: "critText", x: tgt.pos.x, y: tgt.pos.y - 60, born: now });
+            pushFx({ kind: "shake", until: now + 220, strength: 6 });
+          }
           if (p.eff !== undefined && p.eff >= 2) {
             popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 52, value: 0, crit: true, bornAt: now, color: "#ffd83a" });
           } else if (p.eff !== undefined && p.eff > 0 && p.eff <= 0.5) {
