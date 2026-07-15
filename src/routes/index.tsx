@@ -2878,7 +2878,8 @@ function CatchGym({ onClose, onChallengeGym }: {
       const mon = await fetchMon(id, `npc-${id}-${Date.now()}`);
       if (!mon) return;
       const maxHp = Math.round(70 + mon.baseHp * 1.2);
-      setEncounter({ id, mon, hp: maxHp, maxHp, message: `👤 Trainer sends out ${mon.name}! Beat it for coins.`, kind: "trainer", trainerKey: nkey });
+      const pMax = playerMon ? Math.round(80 + playerMon.baseHp * 1.2) : 100;
+      setEncounter({ id, mon, hp: maxHp, maxHp, message: `👤 Trainer sends out ${mon.name}! Beat it for coins.`, kind: "trainer", trainerKey: nkey, playerHp: pMax, playerMaxHp: pMax });
     } finally { setBusy(false); }
   }, [trainersDone]);
 
