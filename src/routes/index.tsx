@@ -2664,6 +2664,10 @@ type Encounter = {
   message: string;
   kind: "wild" | "trainer" | "legendary" | "champion";
   trainerKey?: string;
+  playerHp?: number;
+  playerMaxHp?: number;
+  playerStatus?: "burn" | "poison" | "paralyze" | "freeze" | null;
+  wildStatus?: "burn" | "poison" | "paralyze" | "freeze" | null;
 };
 type Inventory = {
   bike: boolean;
