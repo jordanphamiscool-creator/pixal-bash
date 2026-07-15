@@ -580,6 +580,34 @@ function Game() {
   useEffect(() => { if (typeof window !== "undefined") localStorage.setItem("ppb-watermark", watermark); }, [watermark]);
   const [showIntro, setShowIntro] = useState(false);
 
+  // FX queue: imperative visual effects pushed by events + big hits
+  type FxEvent =
+    | { kind: "meteor"; id: number; x: number; born: number }
+    | { kind: "bolt"; id: number; x: number; born: number }
+    | { kind: "rain"; id: number; until: number }
+    | { kind: "snow"; id: number; until: number }
+    | { kind: "sand"; id: number; until: number }
+    | { kind: "quake"; id: number; until: number }
+    | { kind: "flare"; id: number; until: number }
+    | { kind: "warp"; id: number; born: number }
+    | { kind: "aura"; id: number; until: number; color: string }
+    | { kind: "gold"; id: number; born: number }
+    | { kind: "shake"; id: number; until: number; strength: number }
+    | { kind: "critText"; id: number; x: number; y: number; born: number }
+    | { kind: "combo"; id: number; born: number; n: number };
+  const fxRef = useRef<FxEvent[]>([]);
+  const pushFx = (fx: Omit<FxEvent, "id"> & { id?: number }) => {
+    (fxRef.current as FxEvent[]).push({ ...(fx as FxEvent), id: idRef.current++ });
+    if (fxRef.current.length > 120) fxRef.current.splice(0, fxRef.current.length - 120);
+  };
+
+  // Sudden-damage state (×2 after 45s)
+  const suddenDmgRef = useRef(false);
+  // Combo counter
+  const comboRef = useRef({ count: 0, until: 0 });
+  // Hype meter (fills with damage, unlocks OVERDRIVE)
+  const hypeRef = useRef({ value: 0, overdriveUntil: 0 });
+
   const RANDOM_EVENTS = useMemo(() => [
     { id: "meteor", text: "☄️ METEOR SHOWER — everyone loses 12% HP!", color: "#ff7a3a" },
     { id: "rain", text: "🌧 HEALING RAIN — all Pokémon regen 18% HP!", color: "#4ea8ff" },
