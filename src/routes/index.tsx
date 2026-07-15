@@ -2863,7 +2863,9 @@ function CatchGym({ onClose, onChallengeGym }: {
       const mon = await fetchMon(id, `wild-${id}-${Date.now()}`);
       if (!mon) return;
       const maxHp = Math.round(60 + mon.baseHp * (isNight ? 1.15 : 1));
-      setEncounter({ id, mon, hp: maxHp, maxHp, message: `A wild ${swarmActive ? "🌊 SWARM " : ""}${isNight ? "🌙 " : ""}${mon.name} appeared!`, kind: "wild" });
+      const shiny = Math.random() < (1/512);
+      const pMax = playerMon ? Math.round(80 + playerMon.baseHp * 1.2) : 100;
+      setEncounter({ id, mon, hp: maxHp, maxHp, message: `A wild ${shiny ? "✨SHINY " : ""}${swarmActive ? "🌊 SWARM " : ""}${isNight ? "🌙 " : ""}${mon.name} appeared!`, kind: "wild", playerHp: pMax, playerMaxHp: pMax, playerStatus: null, wildStatus: null });
     } finally { setBusy(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [swarm, isNight, inv.repel]);
