@@ -596,8 +596,8 @@ function Game() {
     | { kind: "critText"; id: number; x: number; y: number; born: number }
     | { kind: "combo"; id: number; born: number; n: number };
   const fxRef = useRef<FxEvent[]>([]);
-  const pushFx = (fx: Omit<FxEvent, "id"> & { id?: number }) => {
-    (fxRef.current as FxEvent[]).push({ ...(fx as FxEvent), id: idRef.current++ });
+  const pushFx = (fx: Partial<FxEvent> & { kind: FxEvent["kind"] }) => {
+    (fxRef.current as FxEvent[]).push({ ...(fx as unknown as FxEvent), id: idRef.current++ });
     if (fxRef.current.length > 120) fxRef.current.splice(0, fxRef.current.length - 120);
   };
 
