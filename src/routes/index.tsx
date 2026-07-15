@@ -630,18 +630,56 @@ function Game() {
     if (alive.length < 2) return;
     const ev = RANDOM_EVENTS[Math.floor(Math.random() * RANDOM_EVENTS.length)];
     switch (ev.id) {
-      case "meteor": alive.forEach((m) => { m.hp = Math.max(1, m.hp - Math.round(m.maxHp * 0.12)); m.hitFlash = now + 300; }); break;
-      case "rain": alive.forEach((m) => { m.hp = Math.min(m.maxHp, m.hp + Math.round(m.maxHp * 0.18)); }); break;
-      case "frenzy": monsRef.current.forEach((m) => { m.lastAttack = 0; m.lastSpecial = 0; }); break;
-      case "speedup": monsRef.current.forEach((m) => { m.data = { ...m.data, baseSpd: Math.round(m.data.baseSpd * 1.3) }; }); break;
-      case "shinystorm": monsRef.current.forEach((m) => { m.shiny = true; }); break;
-      case "suddendeath": alive.forEach((m) => { m.hp = Math.min(m.hp, Math.round(m.maxHp * 0.4)); }); break;
-      case "goldrain": setCoins((c) => c + 25); break;
-      case "mirror": { const a = alive[Math.floor(Math.random() * alive.length)]; const b = alive[Math.floor(Math.random() * alive.length)]; if (a !== b) { const tmp = a.hp; a.hp = Math.min(a.maxHp, b.hp); b.hp = Math.min(b.maxHp, tmp); } break; }
-      case "zap": { const t = alive[Math.floor(Math.random() * alive.length)]; t.hp = Math.max(1, t.hp - Math.round(t.maxHp * 0.35)); t.hitFlash = now + 400; break; }
-      case "teleport": monsRef.current.forEach((m) => { if (m.hp > 0) { m.pos.x = MON_R + Math.random() * (ARENA_W - MON_R * 2); m.pos.y = MON_R + Math.random() * (ARENA_H - MON_R * 2); } }); break;
-      case "berserk": berserkUntilRef.current = now + 6000; break;
-      case "eclipse": monsRef.current.forEach((m) => { if (m.data.type === "psychic" || m.data.type === "dark" || m.data.type === "ghost") m.data = { ...m.data, baseAtk: Math.round(m.data.baseAtk * 1.25) }; }); break;
+      case "meteor":
+        alive.forEach((m) => { m.hp = Math.max(1, m.hp - Math.round(m.maxHp * 0.12)); m.hitFlash = now + 300; });
+        for (let i = 0; i < 10; i++) pushFx({ kind: "meteor", x: Math.random() * ARENA_W, born: now + i * 90 });
+        pushFx({ kind: "shake", until: now + 900, strength: 10 });
+        break;
+      case "rain":
+        alive.forEach((m) => { m.hp = Math.min(m.maxHp, m.hp + Math.round(m.maxHp * 0.18)); });
+        pushFx({ kind: "rain", until: now + 6000 });
+        break;
+      case "frenzy":
+        monsRef.current.forEach((m) => { m.lastAttack = 0; m.lastSpecial = 0; });
+        pushFx({ kind: "aura", until: now + 4000, color: "#ffd83a" });
+        break;
+      case "speedup":
+        monsRef.current.forEach((m) => { m.data = { ...m.data, baseSpd: Math.round(m.data.baseSpd * 1.3) }; });
+        pushFx({ kind: "aura", until: now + 3000, color: "#a0e0ff" });
+        break;
+      case "shinystorm":
+        monsRef.current.forEach((m) => { m.shiny = true; });
+        pushFx({ kind: "gold", born: now });
+        pushFx({ kind: "flare", until: now + 800 });
+        break;
+      case "suddendeath":
+        alive.forEach((m) => { m.hp = Math.min(m.hp, Math.round(m.maxHp * 0.4)); });
+        pushFx({ kind: "shake", until: now + 800, strength: 14 });
+        pushFx({ kind: "aura", until: now + 3000, color: "#ff4a4a" });
+        break;
+      case "goldrain": setCoins((c) => c + 25); pushFx({ kind: "gold", born: now }); break;
+      case "mirror": { const a = alive[Math.floor(Math.random() * alive.length)]; const b = alive[Math.floor(Math.random() * alive.length)]; if (a !== b) { const tmp = a.hp; a.hp = Math.min(a.maxHp, b.hp); b.hp = Math.min(b.maxHp, tmp); } pushFx({ kind: "warp", born: now }); break; }
+      case "zap": {
+        const t = alive[Math.floor(Math.random() * alive.length)];
+        t.hp = Math.max(1, t.hp - Math.round(t.maxHp * 0.35)); t.hitFlash = now + 400;
+        pushFx({ kind: "bolt", x: t.pos.x, born: now });
+        // extra sky-strikes on random targets
+        for (let i = 0; i < 2; i++) {
+          const s = alive[Math.floor(Math.random() * alive.length)];
+          pushFx({ kind: "bolt", x: s.pos.x, born: now + 200 + i * 200 });
+        }
+        pushFx({ kind: "flare", until: now + 400 });
+        break;
+      }
+      case "teleport":
+        monsRef.current.forEach((m) => { if (m.hp > 0) { m.pos.x = MON_R + Math.random() * (ARENA_W - MON_R * 2); m.pos.y = MON_R + Math.random() * (ARENA_H - MON_R * 2); } });
+        pushFx({ kind: "warp", born: now });
+        break;
+      case "berserk": berserkUntilRef.current = now + 6000; pushFx({ kind: "aura", until: now + 6000, color: "#ff5566" }); pushFx({ kind: "shake", until: now + 500, strength: 6 }); break;
+      case "eclipse":
+        monsRef.current.forEach((m) => { if (m.data.type === "psychic" || m.data.type === "dark" || m.data.type === "ghost") m.data = { ...m.data, baseAtk: Math.round(m.data.baseAtk * 1.25) }; });
+        pushFx({ kind: "aura", until: now + 3500, color: "#8a4dff" });
+        break;
     }
     pushLog(ev.text, ev.color);
     setLastEvent({ text: ev.text, color: ev.color, until: now + 3000 });
