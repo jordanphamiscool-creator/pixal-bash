@@ -3182,8 +3182,8 @@ function CatchGym({ onClose, onChallengeGym }: {
       }
       await onChallengeGym(my.slice(0, 3), gymTeam);
       if (!beaten.includes(g.id)) {
-        setBeaten((b) => [...b, g.id]);
-        // Grant perk
+        setBeaten((b) => { const nb = [...b, g.id]; try { lsSet("ppb-beaten", nb); } catch { /* ignore */ } return nb; });
+        // Grant perk (also persist immediately in case of unmount)
         setInv((i) => {
           const n = { ...i };
           if (g.id === "brock") n.cutBadge = true;
@@ -3194,9 +3194,11 @@ function CatchGym({ onClose, onChallengeGym }: {
           if (g.id === "sabrina") n.seeBadge = true;
           if (g.id === "blaine") n.flyBadge = true;
           if (g.id === "giovanni") n.eliteUnlocked = true;
+          try { lsSet("ppb-inv", n); } catch { /* ignore */ }
           return n;
         });
         bumpCoins(g.reward);
+        alert(`🏅 You beat ${g.name}! Perk unlocked. Check your Trainer Card.`);
       }
     } finally { setBusy(false); }
   };
