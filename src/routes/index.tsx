@@ -933,7 +933,7 @@ function Game() {
         const eff = typeMult(d.type, t.data.type);
         const atkMul = 0.8 + 0.6 * (d.baseAtk / 100);
         const defReduction = 1 - Math.min(0.5, t.data.baseDef / 380);
-        const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * formMul * shinyMul * synMul * berserkMul * (crit ? 1.7 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
+        const dmg = Math.max(1, Math.round(d.signature.dmg * atkMul * formMul * shinyMul * synMul * berserkMul * suddenMul * overdriveMul * (crit ? 1.85 : 1) * eff * defReduction * (0.85 + Math.random() * 0.3)));
         const ang = Math.atan2(t.pos.y - m.pos.y, t.pos.x - m.pos.x);
         if (projectilesRef.current.length < 40) {
           projectilesRef.current.push({
