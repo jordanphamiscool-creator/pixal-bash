@@ -2996,32 +2996,114 @@ function CatchGym({ onClose, onChallengeGym }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [move]);
 
-  const attackWild = () => {
+  // Available player moves with type + optional status effect
+  const PLAYER_MOVES = [
+    { name: "Tackle", type: null as string | null, power: 1.0, status: null as null | "burn" | "poison" | "paralyze" | "freeze", statusChance: 0 },
+    { name: "Flame Strike", type: "fire", power: 1.15, status: "burn" as const, statusChance: 0.3 },
+    { name: "Aqua Pulse", type: "water", power: 1.1, status: null, statusChance: 0 },
+    { name: "Thunder Jolt", type: "electric", power: 1.15, status: "paralyze" as const, statusChance: 0.35 },
+    { name: "Ice Fang", type: "ice", power: 1.1, status: "freeze" as const, statusChance: 0.25 },
+    { name: "Toxic Sting", type: "poison", power: 0.95, status: "poison" as const, statusChance: 0.5 },
+  ] as const;
+  const attackWildMove = (moveIdx: number) => {
     if (!encounter || !playerMon) return;
-    const eff = typeMult(playerMon.type, encounter.mon.type);
-    const dojoBonus = 1 + (Math.min(6, inv.potions) * 0.02); // playful nod to EV training
+    const move = PLAYER_MOVES[moveIdx];
+    // Player statuses can lock the attack
+    let msg = "";
+    if (encounter.playerStatus === "freeze" && Math.random() < 0.4) {
+      msg = `❄ ${playerMon.name} is frozen and can't move!`;
+      setEncounter({ ...encounter, message: msg });
+      wildRetaliate(encounter);
+      return;
+    }
+    if (encounter.playerStatus === "paralyze" && Math.random() < 0.25) {
+      msg = `⚡ ${playerMon.name} is paralyzed! Attack failed.`;
+      setEncounter({ ...encounter, message: msg });
+      wildRetaliate(encounter);
+      return;
+    }
+    const moveType = (move.type ?? playerMon.type) as ElementType;
+    const eff = typeMult(moveType, encounter.mon.type);
+    const dojoBonus = 1 + (Math.min(6, inv.potions) * 0.02);
+    const crit = Math.random() < 0.15;
+    const stab = moveType === playerMon.type ? 1.2 : 1;
     const base = 15 + Math.floor(Math.random() * 20) + Math.round(playerMon.baseAtk * 0.08);
-    const dmg = Math.max(4, Math.round(base * eff * dojoBonus));
+    const dmg = Math.max(4, Math.round(base * move.power * eff * dojoBonus * stab * (crit ? 1.7 : 1)));
     const hp = Math.max(0, encounter.hp - dmg);
-    const label = eff >= 2 ? " (super effective!)" : eff <= 0.5 ? " (not very effective)" : "";
+    const label = `${crit ? " CRIT!" : ""}${eff >= 2 ? " (super effective!)" : eff <= 0.5 ? " (not very effective)" : ""}`;
+    // Try to apply status
+    let newWildStatus = encounter.wildStatus ?? null;
+    if (move.status && !newWildStatus && Math.random() < move.statusChance) {
+      newWildStatus = move.status;
+      msg = `${playerMon.name} used ${move.name}! ${dmg} dmg${label} · ${encounter.mon.name} is ${move.status}ed!`;
+    } else {
+      msg = `${playerMon.name} used ${move.name}! ${dmg} dmg${label}`;
+    }
     if (hp === 0) {
       if (encounter.kind === "trainer" && encounter.trainerKey) {
         setTrainersDone((s) => { const n = new Set(s); n.add(encounter.trainerKey!); return n; });
-        setEncounter({ ...encounter, hp, message: `You beat the trainer! ${dmg} dmg${label} — +25 coins!` });
+        setEncounter({ ...encounter, hp, wildStatus: newWildStatus, message: `You beat the trainer! ${dmg} dmg${label} — +25 coins!` });
         bumpCoins(25);
       } else if (encounter.kind === "legendary") {
-        setEncounter({ ...encounter, hp, message: `${encounter.mon.name} is weak — try a Poké Ball!` });
+        setEncounter({ ...encounter, hp, wildStatus: newWildStatus, message: `${encounter.mon.name} is weak — try a Poké Ball!` });
         return;
       } else if (encounter.kind === "champion") {
-        setEncounter({ ...encounter, hp, message: `Challenger defeated! ${dmg} dmg${label} — +100 coins!` });
+        setEncounter({ ...encounter, hp, wildStatus: newWildStatus, message: `Challenger defeated! +100 coins!` });
         bumpCoins(100); setDefenses((d) => d + 1);
       } else {
-        setEncounter({ ...encounter, hp, message: `${encounter.mon.name} fainted! ${dmg} dmg${label}` });
+        setEncounter({ ...encounter, hp, wildStatus: newWildStatus, message: `${encounter.mon.name} fainted! ${dmg} dmg${label}` });
       }
-      setTimeout(() => setEncounter(null), 1300);
-    } else {
-      setEncounter({ ...encounter, hp, message: `You dealt ${dmg} dmg${label}` });
+      setTimeout(() => setEncounter(null), 1400);
+      return;
     }
+    // Wild retaliates
+    wildRetaliate({ ...encounter, hp, wildStatus: newWildStatus, message: msg });
+  };
+  const attackWild = () => attackWildMove(0);
+
+  const wildRetaliate = (enc: Encounter) => {
+    if (!playerMon) { setEncounter(enc); return; }
+    // Status ticks first
+    let wildHp = enc.hp;
+    let playerHp = enc.playerHp ?? 100;
+    const playerMax = enc.playerMaxHp ?? 100;
+    let tickMsg = "";
+    if (enc.wildStatus === "burn") { const t = Math.max(1, Math.round(enc.maxHp * 0.06)); wildHp = Math.max(0, wildHp - t); tickMsg += ` 🔥-${t}`; }
+    if (enc.wildStatus === "poison") { const t = Math.max(1, Math.round(enc.maxHp * 0.08)); wildHp = Math.max(0, wildHp - t); tickMsg += ` ☠-${t}`; }
+    if (wildHp === 0) {
+      setEncounter({ ...enc, hp: 0, message: `${enc.mon.name} fainted from status damage!${tickMsg}` });
+      setTimeout(() => setEncounter(null), 1400);
+      return;
+    }
+    if (enc.playerStatus === "burn") { const t = Math.max(1, Math.round(playerMax * 0.06)); playerHp = Math.max(0, playerHp - t); }
+    if (enc.playerStatus === "poison") { const t = Math.max(1, Math.round(playerMax * 0.08)); playerHp = Math.max(0, playerHp - t); }
+    // Wild picks a move
+    const wildFrozen = enc.wildStatus === "freeze" && Math.random() < 0.4;
+    const wildPara = enc.wildStatus === "paralyze" && Math.random() < 0.3;
+    let retMsg = "";
+    if (wildFrozen) retMsg = `${enc.mon.name} is frozen solid!`;
+    else if (wildPara) retMsg = `${enc.mon.name} is paralyzed and couldn't move!`;
+    else {
+      const wildPool = PLAYER_MOVES.filter(m => !m.type || m.type === enc.mon.type);
+      const wm = wildPool[Math.floor(Math.random() * wildPool.length)];
+      const wmType = (wm.type ?? enc.mon.type) as ElementType;
+      const wEff = typeMult(wmType, playerMon.type);
+      const wCrit = Math.random() < 0.12;
+      const wBase = 10 + Math.floor(Math.random() * 14) + Math.round(enc.mon.baseAtk * 0.08);
+      const wDmg = Math.max(3, Math.round(wBase * wm.power * wEff * (wCrit ? 1.7 : 1) * (enc.wildStatus === "burn" ? 0.85 : 1)));
+      playerHp = Math.max(0, playerHp - wDmg);
+      retMsg = `${enc.mon.name} used ${wm.name}! ${wDmg} dmg${wCrit ? " CRIT" : ""}`;
+      if (wm.status && !enc.playerStatus && Math.random() < wm.statusChance) {
+        enc = { ...enc, playerStatus: wm.status };
+        retMsg += ` · ${playerMon.name} is ${wm.status}ed!`;
+      }
+    }
+    if (playerHp === 0) {
+      setEncounter({ ...enc, hp: wildHp, playerHp: 0, message: `${playerMon.name} fainted! You fled to the last center.${tickMsg} ${retMsg}` });
+      setTimeout(() => setEncounter(null), 1600);
+      return;
+    }
+    setEncounter({ ...enc, hp: wildHp, playerHp, message: `${enc.message}${tickMsg} · ${retMsg}` });
   };
 
   const useBerry = () => {
