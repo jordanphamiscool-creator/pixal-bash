@@ -2280,6 +2280,116 @@ function matchTitle(mons: MonState[], mode: Mode): string {
   const extra = mons.length > 6 ? ` +${mons.length - 6} more` : "";
   return `${names.join(" vs ")}${extra}`;
 }
+function FxLayer({ fxRef, now }: { fxRef: BattleHud["fxRef"]; now: number }) {
+  // Prune expired
+  const items = fxRef.current;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const f = items[i];
+    const life =
+      f.kind === "meteor" ? 900 :
+      f.kind === "bolt" ? 550 :
+      f.kind === "warp" ? 700 :
+      f.kind === "gold" ? 3500 :
+      f.kind === "critText" ? 700 :
+      f.kind === "combo" ? 900 :
+      f.kind === "flare" ? 500 : 0;
+    if (life > 0 && f.born !== undefined && now - f.born > life) items.splice(i, 1);
+    else if (f.until !== undefined && now > f.until) items.splice(i, 1);
+  }
+  const shake = items.find((f) => f.kind === "shake");
+  const shakeStyle: React.CSSProperties = shake
+    ? { transform: `translate(${(Math.random() - 0.5) * (shake.strength || 6)}px, ${(Math.random() - 0.5) * (shake.strength || 6)}px)` }
+    : {};
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden" style={shakeStyle}>
+      {items.map((f) => {
+        if (f.kind === "meteor" && f.x !== undefined && f.born !== undefined) {
+          const dt = Math.max(0, now - f.born);
+          if (dt < 0) return null;
+          const t = Math.min(1, dt / 700);
+          return (
+            <div key={f.id} className="absolute" style={{
+              left: `${(f.x / ARENA_W) * 100}%`, top: `${t * 100}%`,
+              width: 20, height: 20, transform: "translate(-50%,-50%)",
+              background: "radial-gradient(circle,#fff 0%,#ffaa2a 40%,#ff3a1a 100%)",
+              borderRadius: "50%",
+              boxShadow: "0 0 20px #ff6a2a, 0 -30px 40px 5px rgba(255,120,40,0.5)",
+              filter: `blur(${(1 - t) * 1}px)`,
+              opacity: t > 0.95 ? 0 : 1,
+            }} />
+          );
+        }
+        if (f.kind === "bolt" && f.x !== undefined && f.born !== undefined) {
+          const dt = now - f.born;
+          const opacity = dt < 100 ? dt / 100 : dt < 400 ? 1 : Math.max(0, 1 - (dt - 400) / 150);
+          return (
+            <div key={f.id} className="absolute top-0" style={{
+              left: `${(f.x / ARENA_W) * 100}%`, transform: "translateX(-50%)",
+              width: 6, height: "100%",
+              background: "linear-gradient(180deg,#fff 0%,#ffd83a 60%,transparent 100%)",
+              boxShadow: "0 0 24px #fff, 0 0 60px #ffd83a", opacity,
+            }} />
+          );
+        }
+        if (f.kind === "rain") {
+          return <div key={f.id} className="absolute inset-0"
+            style={{ backgroundImage: "repeating-linear-gradient(100deg, rgba(160,220,255,0.35) 0 2px, transparent 2px 8px)", animation: "rain-fall 0.4s linear infinite" }} />;
+        }
+        if (f.kind === "snow") {
+          return <div key={f.id} className="absolute inset-0"
+            style={{ backgroundImage: "radial-gradient(circle at 20% 30%, #fff 0 2px, transparent 3px), radial-gradient(circle at 60% 70%, #fff 0 2px, transparent 3px), radial-gradient(circle at 80% 20%, #fff 0 2px, transparent 3px)", animation: "snow-fall 1.2s linear infinite" }} />;
+        }
+        if (f.kind === "sand") {
+          return <div key={f.id} className="absolute inset-0" style={{ background: "linear-gradient(90deg, rgba(220,170,80,0.25), rgba(220,170,80,0.4))", mixBlendMode: "multiply" }} />;
+        }
+        if (f.kind === "flare") {
+          return <div key={f.id} className="absolute inset-0" style={{ background: "rgba(255,255,255,0.75)", animation: "fx-flare 0.5s ease-out forwards" }} />;
+        }
+        if (f.kind === "aura" && f.color) {
+          return <div key={f.id} className="absolute inset-0" style={{ boxShadow: `inset 0 0 60px 20px ${f.color}`, opacity: 0.6 }} />;
+        }
+        if (f.kind === "warp") {
+          return <div key={f.id} className="absolute inset-0" style={{ background: "radial-gradient(circle,#a17af0 0%,transparent 70%)", animation: "fx-warp 0.7s ease-out forwards" }} />;
+        }
+        if (f.kind === "gold") {
+          return (
+            <div key={f.id} className="absolute inset-0">
+              {Array.from({ length: 24 }).map((_, i) => (
+                <div key={i} className="absolute" style={{
+                  left: `${(i * 37) % 100}%`, top: "-10%",
+                  width: 8, height: 12, background: "#ffd83a",
+                  boxShadow: "0 0 6px #ffd83a",
+                  animation: `winfx-fall ${1.5 + (i % 5) * 0.3}s linear ${i * 0.05}s forwards`,
+                }} />
+              ))}
+            </div>
+          );
+        }
+        if (f.kind === "critText" && f.x !== undefined && f.y !== undefined) {
+          return (
+            <div key={f.id} className="absolute font-bold" style={{
+              left: `${(f.x / ARENA_W) * 100}%`, top: `${(f.y / ARENA_H) * 100}%`,
+              transform: "translate(-50%,-50%)", fontSize: 24,
+              color: "#ffd83a", textShadow: "0 0 8px #000, 0 0 12px #ffd83a",
+              animation: "fx-crit 0.7s ease-out forwards",
+            }}>CRIT!</div>
+          );
+        }
+        if (f.kind === "combo" && f.n !== undefined) {
+          return (
+            <div key={f.id} className="absolute left-1/2 top-16" style={{
+              transform: "translateX(-50%)", fontSize: 28, fontWeight: 900,
+              color: "#ffd83a", textShadow: "0 0 10px #000, 0 0 20px #ffd83a",
+              animation: "fx-combo 0.9s ease-out forwards",
+            }}>×{f.n} COMBO!</div>
+          );
+        }
+        return null;
+      })}
+    </div>
+  );
+}
+
 function IntroCountdown({ startedAt }: { startedAt: number }) {
   const [tick, setTick] = useState(0);
   useEffect(() => {
