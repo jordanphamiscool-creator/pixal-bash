@@ -2051,6 +2051,21 @@ function Battle(props: {
 
       <div ref={arenaRef} className="arena-wrap relative w-full overflow-hidden rounded-xl border-4 border-border" style={{ aspectRatio: `${ARENA_W} / ${ARENA_H}` }}>
         <div className={`${bgCls} absolute inset-0`} />
+        <FxLayer fxRef={hud.fxRef} now={now} />
+        {/* Hype meter + Combo HUD */}
+        <div className="pointer-events-none absolute left-2 top-2 z-20 w-40">
+          <div className="mb-1 text-[7px] text-[#ffd83a]" style={{ textShadow: "0 1px 2px black" }}>
+            HYPE {now < hud.hypeRef.current.overdriveUntil ? "· 🚀 OVERDRIVE" : ""}
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded border border-border bg-black/60">
+            <div className="h-full bg-[#ffd83a] transition-[width]" style={{ width: `${Math.min(100, (hud.hypeRef.current.value / 800) * 100)}%` }} />
+          </div>
+          {now < hud.comboRef.current.until && hud.comboRef.current.count >= 2 && (
+            <div className="mt-1 text-[9px] font-bold" style={{ color: "#ffd83a", textShadow: "0 0 6px black" }}>
+              ×{hud.comboRef.current.count} COMBO
+            </div>
+          )}
+        </div>
         <div className="relative h-full w-full">
           <svg viewBox={`0 0 ${ARENA_W} ${ARENA_H}`} className="absolute inset-0 h-full w-full pointer-events-none" preserveAspectRatio="xMidYMid meet">
             <defs>
