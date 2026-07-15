@@ -1339,6 +1339,7 @@ function Game() {
         statsRef, koLogRef, startTimeRef,
         lastEvent, koCam, watermark, setWatermark,
         showIntro, matchSeed,
+        fxRef, hypeRef, comboRef, suddenDmgRef,
       }}
     />
 
