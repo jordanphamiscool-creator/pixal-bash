@@ -2210,7 +2210,7 @@ function Battle(props: {
               : `-${p.value}${p.crit ? "!" : ""}`;
             return (
               <span key={p.id} className="dmg-pop pointer-events-none absolute text-[10px] sm:text-xs"
-                style={{ left: `${(p.x / ARENA_W) * 100}%`, top: `${(p.y / ARENA_H) * 100}%`, color: p.color }}>
+                style={{ left: `${(p.x / ARENA_W) * 100}%`, top: `${(p.y / ARENA_H) * 100}%`, color: p.color, fontSize: p.scale ? `${Math.round(11 * p.scale)}px` : undefined, textShadow: p.crit ? "0 0 8px #000, 0 0 12px currentColor" : "0 1px 2px #000" }}>
                 {label}
               </span>
             );
