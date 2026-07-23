@@ -607,6 +607,8 @@ function Game() {
   const comboRef = useRef({ count: 0, until: 0 });
   // Hype meter (fills with damage, unlocks OVERDRIVE)
   const hypeRef = useRef({ value: 0, overdriveUntil: 0 });
+  // KO streak (multi-KO within 2s)
+  const koStreakRef = useRef({ count: 0, until: 0 });
 
   const RANDOM_EVENTS = useMemo(() => [
     { id: "meteor", text: "☄️ METEOR SHOWER — everyone loses 12% HP!", color: "#ff7a3a" },
