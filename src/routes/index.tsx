@@ -2061,6 +2061,8 @@ function Battle(props: {
       <div ref={arenaRef} className="arena-wrap relative w-full overflow-hidden rounded-xl border-4 border-border" style={{ aspectRatio: `${ARENA_W} / ${ARENA_H}` }}>
         <div className={`${bgCls} absolute inset-0`} />
         <FxLayer fxRef={hud.fxRef} now={now} />
+        {now < hud.hypeRef.current.overdriveUntil && <div className="fx-overdrive-bg" />}
+        {hud.suddenDmgRef.current && <div className="fx-overdrive-bg" style={{ mixBlendMode: "screen", background: "radial-gradient(circle at 50% 50%, rgba(255,60,60,0.18), transparent 70%)" }} />}
         {/* Hype meter + Combo HUD */}
         <div className="pointer-events-none absolute left-2 top-2 z-20 w-40">
           <div className="mb-1 text-[7px] text-[#ffd83a]" style={{ textShadow: "0 1px 2px black" }}>
