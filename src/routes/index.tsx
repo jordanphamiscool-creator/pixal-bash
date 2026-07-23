@@ -981,12 +981,26 @@ function Game() {
           if (attacker) {
             const key = attacker.data.uid;
             const cur = statsRef.current[key] ?? { dmg: 0, kos: 0, name: attacker.data.name, color: attacker.data.color, sprite: attacker.data.sprite };
+            const prevKos = cur.kos;
             cur.dmg += p.dmg;
             cur.name = attacker.data.name; cur.color = attacker.data.color; cur.sprite = attacker.data.sprite;
             if (tgt.hp === 0) cur.kos += 1;
             statsRef.current[key] = cur;
+            // Announcer milestones
+            if (cur.kos > prevKos) {
+              if (cur.kos === 3) announce(`${cur.name} is ON FIRE! 🔥`, "#ff7a3a");
+              else if (cur.kos === 6) announce(`GODLIKE — ${cur.name}!`, "#ffd83a");
+            }
+            // Track biggest hit for Play of the Game
+            if (!biggestHitRef.current || p.dmg > biggestHitRef.current.dmg) {
+              biggestHitRef.current = { dmg: p.dmg, attacker: cur.name, target: tgt.data.name, color: cur.color };
+            }
           }
-          popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 28, value: p.dmg, crit: p.crit, bornAt: now, color: p.crit ? "#ffd83a" : "#ff5566" });
+          // Damage number, size scales with combo
+          const comboActive = now < comboRef.current.until ? comboRef.current.count : 1;
+          popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 28, value: p.dmg, crit: p.crit, bornAt: now, color: p.crit ? "#ffd83a" : "#ff5566", scale: Math.min(2, 1 + comboActive * 0.12) });
+          // Hit ring color-splash
+          pushFx({ kind: "hitRing", born: now, x: tgt.pos.x, y: tgt.pos.y, color: p.crit ? "#ffd83a" : attacker?.data.color || "#fff" });
           // Combo counter
           if (now < comboRef.current.until) comboRef.current.count += 1; else comboRef.current.count = 1;
           comboRef.current.until = now + 1500;
@@ -1002,30 +1016,38 @@ function Game() {
             pushFx({ kind: "aura", until: now + 8000, color: "#ffd83a" });
             pushFx({ kind: "flare", until: now + 500 });
           }
-          // Crit visual
+          // Crit visual + hit-stop
           if (p.crit) {
             pushFx({ kind: "critText", x: tgt.pos.x, y: tgt.pos.y - 60, born: now });
-            pushFx({ kind: "shake", until: now + 220, strength: 6 });
+            hitStopRef.current = now + 80;
           }
+          // Screen shake scales with damage
+          const shakeStrength = Math.min(14, 3 + p.dmg / 8);
+          pushFx({ kind: "shake", until: now + 200, strength: shakeStrength });
           if (p.eff !== undefined && p.eff >= 2) {
-            popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 52, value: 0, crit: true, bornAt: now, color: "#ffd83a" });
+            pushFx({ kind: "effBanner", born: now, text: "SUPER EFFECTIVE!", color: "#ffd83a" });
           } else if (p.eff !== undefined && p.eff > 0 && p.eff <= 0.5) {
-            popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 52, value: 0, crit: false, bornAt: now, color: "#9aa0a6" });
+            pushFx({ kind: "effBanner", born: now, text: "not very effective…", color: "#9aa0a6" });
           } else if (p.eff === 0) {
-            popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 52, value: 0, crit: false, bornAt: now, color: "#ff7777" });
+            pushFx({ kind: "effBanner", born: now, text: "NO EFFECT", color: "#ff7777" });
           }
           if (tgt.hp === 0) {
             pushLog(`${tgt.data.name} was knocked out!`, "var(--color-muted-foreground)");
             if (Math.random() < 0.5) announce(`${tgt.data.name} ${KO_LINES[Math.floor(Math.random() * KO_LINES.length)]}`, "#ffd83a");
             koLogRef.current.push({ t: performance.now() - startTimeRef.current, name: tgt.data.name, color: tgt.data.color });
             setKoCam({ name: tgt.data.name, color: tgt.data.color, sprite: tgt.data.sprite, until: now + 1400 });
+            // Ghost float
+            pushFx({ kind: "ghost", born: now, x: tgt.pos.x, y: tgt.pos.y, sprite: tgt.data.sprite, color: tgt.data.color });
+            // Crowd cheer synth
+            if (soundRef.current) { try { const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)(); const o = ctx.createOscillator(); const g = ctx.createGain(); o.frequency.setValueAtTime(660, ctx.currentTime); o.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.25); g.gain.setValueAtTime(volume * 0.15, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3); o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + 0.3); } catch { /* ignore */ } }
             // KO streak announcer
             if (now < koStreakRef.current.until) koStreakRef.current.count += 1; else koStreakRef.current.count = 1;
             koStreakRef.current.until = now + 2200;
             const sc = koStreakRef.current.count;
             const label = sc === 2 ? "DOUBLE KO!" : sc === 3 ? "TRIPLE KO!" : sc === 4 ? "RAMPAGE!" : sc >= 5 ? "UNSTOPPABLE!!" : "";
             if (label) { announce(label, "#ff5aa8"); pushFx({ kind: "combo", born: now, n: sc }); pushFx({ kind: "flare", until: now + 400 }); }
-            pushFx({ kind: "shake", until: now + 260, strength: 8 });
+            pushFx({ kind: "shake", until: now + 260, strength: 10 });
+            hitStopRef.current = Math.max(hitStopRef.current, now + 120);
             killed = true;
           }
         }
