@@ -1008,6 +1008,13 @@ function Game() {
             if (Math.random() < 0.5) announce(`${tgt.data.name} ${KO_LINES[Math.floor(Math.random() * KO_LINES.length)]}`, "#ffd83a");
             koLogRef.current.push({ t: performance.now() - startTimeRef.current, name: tgt.data.name, color: tgt.data.color });
             setKoCam({ name: tgt.data.name, color: tgt.data.color, sprite: tgt.data.sprite, until: now + 1400 });
+            // KO streak announcer
+            if (now < koStreakRef.current.until) koStreakRef.current.count += 1; else koStreakRef.current.count = 1;
+            koStreakRef.current.until = now + 2200;
+            const sc = koStreakRef.current.count;
+            const label = sc === 2 ? "DOUBLE KO!" : sc === 3 ? "TRIPLE KO!" : sc === 4 ? "RAMPAGE!" : sc >= 5 ? "UNSTOPPABLE!!" : "";
+            if (label) { announce(label, "#ff5aa8"); pushFx({ kind: "combo", born: now, n: sc }); pushFx({ kind: "flare", until: now + 400 }); }
+            pushFx({ kind: "shake", until: now + 260, strength: 8 });
             killed = true;
           }
         }
