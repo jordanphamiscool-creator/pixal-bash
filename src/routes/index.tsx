@@ -1942,7 +1942,7 @@ type BattleHud = {
   watermark: string; setWatermark: (s: string) => void;
   showIntro: boolean;
   matchSeed: number;
-  fxRef: React.MutableRefObject<Array<{ kind: string; id: number; x?: number; y?: number; born?: number; until?: number; color?: string; strength?: number; n?: number }>>;
+  fxRef: React.MutableRefObject<Array<{ kind: string; id: number; x?: number; y?: number; born?: number; until?: number; color?: string; strength?: number; n?: number; name?: string; text?: string; sprite?: string }>>;
   hypeRef: React.MutableRefObject<{ value: number; overdriveUntil: number }>;
   comboRef: React.MutableRefObject<{ count: number; until: number }>;
   suddenDmgRef: React.MutableRefObject<boolean>;
