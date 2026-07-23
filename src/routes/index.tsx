@@ -2443,6 +2443,48 @@ function FxLayer({ fxRef, now }: { fxRef: BattleHud["fxRef"]; now: number }) {
             }}>×{f.n} COMBO!</div>
           );
         }
+        if (f.kind === "moveBanner" && f.name && f.born !== undefined) {
+          return (
+            <div key={f.id} className="absolute bottom-6 left-1/2" style={{
+              transform: "translateX(-50%)", padding: "6px 14px",
+              background: "rgba(0,0,0,0.7)", border: `2px solid ${f.color}`,
+              color: f.color, fontSize: 14, fontWeight: 700,
+              boxShadow: `0 0 16px ${f.color}`,
+              animation: "fx-combo 1.1s ease-out forwards",
+            }}>{f.name}</div>
+          );
+        }
+        if (f.kind === "effBanner" && f.text && f.born !== undefined) {
+          return (
+            <div key={f.id} className="absolute left-1/2 top-6" style={{
+              transform: "translateX(-50%)", padding: "4px 10px",
+              background: "rgba(0,0,0,0.7)", border: `2px solid ${f.color}`,
+              color: f.color, fontSize: 12, fontWeight: 800,
+              animation: "fx-combo 0.9s ease-out forwards",
+            }}>{f.text}</div>
+          );
+        }
+        if (f.kind === "ghost" && f.sprite && f.x !== undefined && f.y !== undefined && f.born !== undefined) {
+          const t = (now - f.born) / 1000;
+          return (
+            <img key={f.id} src={f.sprite} alt="" style={{
+              position: "absolute", left: `${(f.x / ARENA_W) * 100}%`,
+              top: `${(f.y / ARENA_H) * 100}%`,
+              transform: `translate(-50%, calc(-50% - ${t * 60}px))`,
+              width: 48, height: 48, opacity: Math.max(0, 1 - t),
+              filter: `drop-shadow(0 0 8px ${f.color}) grayscale(0.6)`,
+              imageRendering: "pixelated", pointerEvents: "none",
+            }} />
+          );
+        }
+        if (f.kind === "hitRing" && f.x !== undefined && f.y !== undefined && f.color) {
+          return (
+            <div key={f.id} className="fx-ring" style={{
+              left: `${(f.x / ARENA_W) * 100}%`, top: `${(f.y / ARENA_H) * 100}%`,
+              width: 40, height: 40, borderColor: f.color,
+            }} />
+          );
+        }
         return null;
       })}
     </div>
