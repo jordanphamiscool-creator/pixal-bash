@@ -594,11 +594,15 @@ function Game() {
     | { kind: "gold"; id: number; born: number }
     | { kind: "shake"; id: number; until: number; strength: number }
     | { kind: "critText"; id: number; x: number; y: number; born: number }
-    | { kind: "combo"; id: number; born: number; n: number };
+    | { kind: "combo"; id: number; born: number; n: number }
+    | { kind: "moveBanner"; id: number; born: number; name: string; color: string }
+    | { kind: "effBanner"; id: number; born: number; text: string; color: string }
+    | { kind: "ghost"; id: number; born: number; x: number; y: number; sprite: string; color: string }
+    | { kind: "hitRing"; id: number; born: number; x: number; y: number; color: string };
   const fxRef = useRef<FxEvent[]>([]);
   const pushFx = (fx: Partial<FxEvent> & { kind: FxEvent["kind"] }) => {
     (fxRef.current as FxEvent[]).push({ ...(fx as unknown as FxEvent), id: idRef.current++ });
-    if (fxRef.current.length > 120) fxRef.current.splice(0, fxRef.current.length - 120);
+    if (fxRef.current.length > 140) fxRef.current.splice(0, fxRef.current.length - 140);
   };
 
   // Sudden-damage state (×2 after 45s)
