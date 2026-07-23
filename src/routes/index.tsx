@@ -731,11 +731,14 @@ function Game() {
     let last = performance.now();
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
-      const dt = Math.min(0.05, (now - last) / 1000);
+      let dt = Math.min(0.05, (now - last) / 1000);
       last = now;
+      // Hit-stop: freeze combat for a beat on big crits
+      if (now < hitStopRef.current) dt = 0;
+      // Slow-mo: last enemy on low HP → 0.5× time
+      const alive = monsRef.current.filter((mm) => mm.hp > 0);
+      if (alive.length === 2 && Math.min(alive[0].hp / alive[0].maxHp, alive[1].hp / alive[1].maxHp) < 0.2) dt *= 0.5;
       if (runningRef.current && status === "fighting") step(dt, now);
-      // Throttle React renders to ~11fps so HP bars/log update without thrashing.
-      // Lower than this triggers a TON of re-rendering with 18 mons.
       if (now - lastRenderRef.current > 60) {
         lastRenderRef.current = now;
         force((n) => (n + 1) % 1_000_000);
