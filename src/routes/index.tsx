@@ -2112,13 +2112,17 @@ function Battle(props: {
             const fainted = m.hp <= 0;
             const size = (d.isGmax ? 100 : d.isMega ? 84 : (m.plusLevel === 2 ? 80 : m.plusLevel === 1 ? 72 : 64)) * sizeMul;
             const evolving = m.evolveFlashUntil && now < m.evolveFlashUntil;
+            const aliveCount = mons.filter((mm) => mm.hp > 0).length;
+            const isBoss = !fainted && aliveCount <= 2 && mons.length >= 3;
+            const koCount = (hud.statsRef?.current?.[d.uid]?.kos) ?? 0;
+            const rainbow = koCount >= 3;
             return (
               <div key={d.uid}
                 onPointerDown={(e) => !fainted && onPointerDown(e, i)}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
-                className={`absolute flex flex-col items-center ${running ? "anim-float" : ""}`}
+                className={`absolute flex flex-col items-center ${running ? "anim-float" : ""} ${rainbow ? "fx-rainbow" : ""}`}
                 style={{
                   left: `${(m.pos.x / ARENA_W) * 100}%`,
                   top: `${(m.pos.y / ARENA_H) * 100}%`,
@@ -2132,6 +2136,7 @@ function Battle(props: {
                     : `drop-shadow(0 0 6px ${d.color})`,
                   transition: "filter 120ms",
                 }}>
+                {isBoss && <div className="fx-boss absolute" style={{ width: size + 12, height: size + 12, left: -6, top: -6 }} />}
                 <img src={d.sprite} alt={d.name} className={evolving ? "anim-evolve-spin" : ""} draggable={false}
                   onError={(e) => {
                     const img = e.currentTarget as HTMLImageElement;
