@@ -1264,12 +1264,18 @@ function Game() {
       suddenDmgRef.current = false;
       comboRef.current = { count: 0, until: 0 };
       hypeRef.current = { value: 0, overdriveUntil: 0 };
+      koStreakRef.current = { count: 0, until: 0 };
+      hitStopRef.current = 0;
+      biggestHitRef.current = null;
       fxRef.current.length = 0;
       berserkUntilRef.current = 0;
       setLastEvent(null); setKoCam(null);
       setMatchSeed(Math.floor(Math.random() * 1_000_000));
       setShowIntro(true);
       setTimeout(() => setShowIntro(false), 3200);
+      // Random announcer intro
+      const introLines = ["LET'S GET READY TO RUMBLE!", "Trainers set… BATTLE ON!", "The crowd goes wild!", "Fists up, fangs out — FIGHT!", "History in the making tonight!"];
+      setTimeout(() => announce(introLines[Math.floor(Math.random() * introLines.length)], "#ffd83a"), 400);
 
 
       let resolvedTarget: string | null = null;
