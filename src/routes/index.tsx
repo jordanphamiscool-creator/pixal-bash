@@ -58,7 +58,7 @@ type Projectile = {
   bornAt: number; duration: number;
   eff?: number; // type effectiveness of the hit
 };
-type Pop = { id: number; x: number; y: number; value: number; crit: boolean; bornAt: number; color: string };
+type Pop = { id: number; x: number; y: number; value: number; crit: boolean; bornAt: number; color: string; scale?: number };
 type LogEntry = { id: number; text: string; color: string };
 
 // Custom-mode pick: choose a Pokémon, set team, and optionally let it evolve
