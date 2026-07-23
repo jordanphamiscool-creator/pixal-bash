@@ -607,6 +607,8 @@ function Game() {
   const comboRef = useRef({ count: 0, until: 0 });
   // Hype meter (fills with damage, unlocks OVERDRIVE)
   const hypeRef = useRef({ value: 0, overdriveUntil: 0 });
+  // KO streak (multi-KO within 2s)
+  const koStreakRef = useRef({ count: 0, until: 0 });
 
   const RANDOM_EVENTS = useMemo(() => [
     { id: "meteor", text: "☄️ METEOR SHOWER — everyone loses 12% HP!", color: "#ff7a3a" },
@@ -1006,6 +1008,13 @@ function Game() {
             if (Math.random() < 0.5) announce(`${tgt.data.name} ${KO_LINES[Math.floor(Math.random() * KO_LINES.length)]}`, "#ffd83a");
             koLogRef.current.push({ t: performance.now() - startTimeRef.current, name: tgt.data.name, color: tgt.data.color });
             setKoCam({ name: tgt.data.name, color: tgt.data.color, sprite: tgt.data.sprite, until: now + 1400 });
+            // KO streak announcer
+            if (now < koStreakRef.current.until) koStreakRef.current.count += 1; else koStreakRef.current.count = 1;
+            koStreakRef.current.until = now + 2200;
+            const sc = koStreakRef.current.count;
+            const label = sc === 2 ? "DOUBLE KO!" : sc === 3 ? "TRIPLE KO!" : sc === 4 ? "RAMPAGE!" : sc >= 5 ? "UNSTOPPABLE!!" : "";
+            if (label) { announce(label, "#ff5aa8"); pushFx({ kind: "combo", born: now, n: sc }); pushFx({ kind: "flare", until: now + 400 }); }
+            pushFx({ kind: "shake", until: now + 260, strength: 8 });
             killed = true;
           }
         }
@@ -2052,6 +2061,8 @@ function Battle(props: {
       <div ref={arenaRef} className="arena-wrap relative w-full overflow-hidden rounded-xl border-4 border-border" style={{ aspectRatio: `${ARENA_W} / ${ARENA_H}` }}>
         <div className={`${bgCls} absolute inset-0`} />
         <FxLayer fxRef={hud.fxRef} now={now} />
+        {now < hud.hypeRef.current.overdriveUntil && <div className="fx-overdrive-bg" />}
+        {hud.suddenDmgRef.current && <div className="fx-overdrive-bg" style={{ mixBlendMode: "screen", background: "radial-gradient(circle at 50% 50%, rgba(255,60,60,0.18), transparent 70%)" }} />}
         {/* Hype meter + Combo HUD */}
         <div className="pointer-events-none absolute left-2 top-2 z-20 w-40">
           <div className="mb-1 text-[7px] text-[#ffd83a]" style={{ textShadow: "0 1px 2px black" }}>
@@ -2103,13 +2114,17 @@ function Battle(props: {
             const fainted = m.hp <= 0;
             const size = (d.isGmax ? 100 : d.isMega ? 84 : (m.plusLevel === 2 ? 80 : m.plusLevel === 1 ? 72 : 64)) * sizeMul;
             const evolving = m.evolveFlashUntil && now < m.evolveFlashUntil;
+            const aliveCount = mons.filter((mm) => mm.hp > 0).length;
+            const isBoss = !fainted && aliveCount <= 2 && mons.length >= 3;
+            const koCount = (hud.statsRef?.current?.[d.uid]?.kos) ?? 0;
+            const rainbow = koCount >= 3;
             return (
               <div key={d.uid}
                 onPointerDown={(e) => !fainted && onPointerDown(e, i)}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
-                className={`absolute flex flex-col items-center ${running ? "anim-float" : ""}`}
+                className={`absolute flex flex-col items-center ${running ? "anim-float" : ""} ${rainbow ? "fx-rainbow" : ""}`}
                 style={{
                   left: `${(m.pos.x / ARENA_W) * 100}%`,
                   top: `${(m.pos.y / ARENA_H) * 100}%`,
@@ -2123,6 +2138,7 @@ function Battle(props: {
                     : `drop-shadow(0 0 6px ${d.color})`,
                   transition: "filter 120ms",
                 }}>
+                {isBoss && <div className="fx-boss absolute" style={{ width: size + 12, height: size + 12, left: -6, top: -6 }} />}
                 <img src={d.sprite} alt={d.name} className={evolving ? "anim-evolve-spin" : ""} draggable={false}
                   onError={(e) => {
                     const img = e.currentTarget as HTMLImageElement;
