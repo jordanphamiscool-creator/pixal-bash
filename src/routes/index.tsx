@@ -2347,6 +2347,10 @@ function FxLayer({ fxRef, now }: { fxRef: BattleHud["fxRef"]; now: number }) {
       f.kind === "gold" ? 3500 :
       f.kind === "critText" ? 700 :
       f.kind === "combo" ? 900 :
+      f.kind === "moveBanner" ? 1100 :
+      f.kind === "effBanner" ? 900 :
+      f.kind === "ghost" ? 1000 :
+      f.kind === "hitRing" ? 500 :
       f.kind === "flare" ? 500 : 0;
     if (life > 0 && f.born !== undefined && now - f.born > life) items.splice(i, 1);
     else if (f.until !== undefined && now > f.until) items.splice(i, 1);
