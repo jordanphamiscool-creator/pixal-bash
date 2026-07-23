@@ -957,6 +957,7 @@ function Game() {
           });
         }
         pushLog(`★ ${d.name} unleashed ${d.signature.name}! ${crit ? "CRIT " : ""}${dmg}${effLabel(eff)}`, d.color);
+        pushFx({ kind: "moveBanner", born: now, name: d.signature.name, color: d.color });
         if (soundRef.current) playSound(d.cry, volume * 0.6);
       }
 
