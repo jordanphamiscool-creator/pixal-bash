@@ -58,7 +58,7 @@ type Projectile = {
   bornAt: number; duration: number;
   eff?: number; // type effectiveness of the hit
 };
-type Pop = { id: number; x: number; y: number; value: number; crit: boolean; bornAt: number; color: string };
+type Pop = { id: number; x: number; y: number; value: number; crit: boolean; bornAt: number; color: string; scale?: number };
 type LogEntry = { id: number; text: string; color: string };
 
 // Custom-mode pick: choose a Pokémon, set team, and optionally let it evolve
@@ -594,11 +594,15 @@ function Game() {
     | { kind: "gold"; id: number; born: number }
     | { kind: "shake"; id: number; until: number; strength: number }
     | { kind: "critText"; id: number; x: number; y: number; born: number }
-    | { kind: "combo"; id: number; born: number; n: number };
+    | { kind: "combo"; id: number; born: number; n: number }
+    | { kind: "moveBanner"; id: number; born: number; name: string; color: string }
+    | { kind: "effBanner"; id: number; born: number; text: string; color: string }
+    | { kind: "ghost"; id: number; born: number; x: number; y: number; sprite: string; color: string }
+    | { kind: "hitRing"; id: number; born: number; x: number; y: number; color: string };
   const fxRef = useRef<FxEvent[]>([]);
   const pushFx = (fx: Partial<FxEvent> & { kind: FxEvent["kind"] }) => {
     (fxRef.current as FxEvent[]).push({ ...(fx as unknown as FxEvent), id: idRef.current++ });
-    if (fxRef.current.length > 120) fxRef.current.splice(0, fxRef.current.length - 120);
+    if (fxRef.current.length > 140) fxRef.current.splice(0, fxRef.current.length - 140);
   };
 
   // Sudden-damage state (×2 after 45s)
@@ -609,6 +613,9 @@ function Game() {
   const hypeRef = useRef({ value: 0, overdriveUntil: 0 });
   // KO streak (multi-KO within 2s)
   const koStreakRef = useRef({ count: 0, until: 0 });
+  // Extra polish refs
+  const hitStopRef = useRef(0);
+  const biggestHitRef = useRef<{ dmg: number; attacker: string; target: string; color: string } | null>(null);
 
   const RANDOM_EVENTS = useMemo(() => [
     { id: "meteor", text: "☄️ METEOR SHOWER — everyone loses 12% HP!", color: "#ff7a3a" },
@@ -724,11 +731,14 @@ function Game() {
     let last = performance.now();
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
-      const dt = Math.min(0.05, (now - last) / 1000);
+      let dt = Math.min(0.05, (now - last) / 1000);
       last = now;
+      // Hit-stop: freeze combat for a beat on big crits
+      if (now < hitStopRef.current) dt = 0;
+      // Slow-mo: last enemy on low HP → 0.5× time
+      const alive = monsRef.current.filter((mm) => mm.hp > 0);
+      if (alive.length === 2 && Math.min(alive[0].hp / alive[0].maxHp, alive[1].hp / alive[1].maxHp) < 0.2) dt *= 0.5;
       if (runningRef.current && status === "fighting") step(dt, now);
-      // Throttle React renders to ~11fps so HP bars/log update without thrashing.
-      // Lower than this triggers a TON of re-rendering with 18 mons.
       if (now - lastRenderRef.current > 60) {
         lastRenderRef.current = now;
         force((n) => (n + 1) % 1_000_000);
@@ -947,6 +957,7 @@ function Game() {
           });
         }
         pushLog(`★ ${d.name} unleashed ${d.signature.name}! ${crit ? "CRIT " : ""}${dmg}${effLabel(eff)}`, d.color);
+        pushFx({ kind: "moveBanner", born: now, name: d.signature.name, color: d.color });
         if (soundRef.current) playSound(d.cry, volume * 0.6);
       }
 
@@ -970,12 +981,26 @@ function Game() {
           if (attacker) {
             const key = attacker.data.uid;
             const cur = statsRef.current[key] ?? { dmg: 0, kos: 0, name: attacker.data.name, color: attacker.data.color, sprite: attacker.data.sprite };
+            const prevKos = cur.kos;
             cur.dmg += p.dmg;
             cur.name = attacker.data.name; cur.color = attacker.data.color; cur.sprite = attacker.data.sprite;
             if (tgt.hp === 0) cur.kos += 1;
             statsRef.current[key] = cur;
+            // Announcer milestones
+            if (cur.kos > prevKos) {
+              if (cur.kos === 3) announce(`${cur.name} is ON FIRE! 🔥`, "#ff7a3a");
+              else if (cur.kos === 6) announce(`GODLIKE — ${cur.name}!`, "#ffd83a");
+            }
+            // Track biggest hit for Play of the Game
+            if (!biggestHitRef.current || p.dmg > biggestHitRef.current.dmg) {
+              biggestHitRef.current = { dmg: p.dmg, attacker: cur.name, target: tgt.data.name, color: cur.color };
+            }
           }
-          popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 28, value: p.dmg, crit: p.crit, bornAt: now, color: p.crit ? "#ffd83a" : "#ff5566" });
+          // Damage number, size scales with combo
+          const comboActive = now < comboRef.current.until ? comboRef.current.count : 1;
+          popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 28, value: p.dmg, crit: p.crit, bornAt: now, color: p.crit ? "#ffd83a" : "#ff5566", scale: Math.min(2, 1 + comboActive * 0.12) });
+          // Hit ring color-splash
+          pushFx({ kind: "hitRing", born: now, x: tgt.pos.x, y: tgt.pos.y, color: p.crit ? "#ffd83a" : attacker?.data.color || "#fff" });
           // Combo counter
           if (now < comboRef.current.until) comboRef.current.count += 1; else comboRef.current.count = 1;
           comboRef.current.until = now + 1500;
@@ -991,30 +1016,38 @@ function Game() {
             pushFx({ kind: "aura", until: now + 8000, color: "#ffd83a" });
             pushFx({ kind: "flare", until: now + 500 });
           }
-          // Crit visual
+          // Crit visual + hit-stop
           if (p.crit) {
             pushFx({ kind: "critText", x: tgt.pos.x, y: tgt.pos.y - 60, born: now });
-            pushFx({ kind: "shake", until: now + 220, strength: 6 });
+            hitStopRef.current = now + 80;
           }
+          // Screen shake scales with damage
+          const shakeStrength = Math.min(14, 3 + p.dmg / 8);
+          pushFx({ kind: "shake", until: now + 200, strength: shakeStrength });
           if (p.eff !== undefined && p.eff >= 2) {
-            popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 52, value: 0, crit: true, bornAt: now, color: "#ffd83a" });
+            pushFx({ kind: "effBanner", born: now, text: "SUPER EFFECTIVE!", color: "#ffd83a" });
           } else if (p.eff !== undefined && p.eff > 0 && p.eff <= 0.5) {
-            popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 52, value: 0, crit: false, bornAt: now, color: "#9aa0a6" });
+            pushFx({ kind: "effBanner", born: now, text: "not very effective…", color: "#9aa0a6" });
           } else if (p.eff === 0) {
-            popsRef.current.push({ id: idRef.current++, x: tgt.pos.x, y: tgt.pos.y - 52, value: 0, crit: false, bornAt: now, color: "#ff7777" });
+            pushFx({ kind: "effBanner", born: now, text: "NO EFFECT", color: "#ff7777" });
           }
           if (tgt.hp === 0) {
             pushLog(`${tgt.data.name} was knocked out!`, "var(--color-muted-foreground)");
             if (Math.random() < 0.5) announce(`${tgt.data.name} ${KO_LINES[Math.floor(Math.random() * KO_LINES.length)]}`, "#ffd83a");
             koLogRef.current.push({ t: performance.now() - startTimeRef.current, name: tgt.data.name, color: tgt.data.color });
             setKoCam({ name: tgt.data.name, color: tgt.data.color, sprite: tgt.data.sprite, until: now + 1400 });
+            // Ghost float
+            pushFx({ kind: "ghost", born: now, x: tgt.pos.x, y: tgt.pos.y, sprite: tgt.data.sprite, color: tgt.data.color });
+            // Crowd cheer synth
+            if (soundRef.current) { try { const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)(); const o = ctx.createOscillator(); const g = ctx.createGain(); o.frequency.setValueAtTime(660, ctx.currentTime); o.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.25); g.gain.setValueAtTime(volume * 0.15, ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3); o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + 0.3); } catch { /* ignore */ } }
             // KO streak announcer
             if (now < koStreakRef.current.until) koStreakRef.current.count += 1; else koStreakRef.current.count = 1;
             koStreakRef.current.until = now + 2200;
             const sc = koStreakRef.current.count;
             const label = sc === 2 ? "DOUBLE KO!" : sc === 3 ? "TRIPLE KO!" : sc === 4 ? "RAMPAGE!" : sc >= 5 ? "UNSTOPPABLE!!" : "";
             if (label) { announce(label, "#ff5aa8"); pushFx({ kind: "combo", born: now, n: sc }); pushFx({ kind: "flare", until: now + 400 }); }
-            pushFx({ kind: "shake", until: now + 260, strength: 8 });
+            pushFx({ kind: "shake", until: now + 260, strength: 10 });
+            hitStopRef.current = Math.max(hitStopRef.current, now + 120);
             killed = true;
           }
         }
@@ -1231,12 +1264,18 @@ function Game() {
       suddenDmgRef.current = false;
       comboRef.current = { count: 0, until: 0 };
       hypeRef.current = { value: 0, overdriveUntil: 0 };
+      koStreakRef.current = { count: 0, until: 0 };
+      hitStopRef.current = 0;
+      biggestHitRef.current = null;
       fxRef.current.length = 0;
       berserkUntilRef.current = 0;
       setLastEvent(null); setKoCam(null);
       setMatchSeed(Math.floor(Math.random() * 1_000_000));
       setShowIntro(true);
       setTimeout(() => setShowIntro(false), 3200);
+      // Random announcer intro
+      const introLines = ["LET'S GET READY TO RUMBLE!", "Trainers set… BATTLE ON!", "The crowd goes wild!", "Fists up, fangs out — FIGHT!", "History in the making tonight!"];
+      setTimeout(() => announce(introLines[Math.floor(Math.random() * introLines.length)], "#ffd83a"), 400);
 
 
       let resolvedTarget: string | null = null;
@@ -1903,7 +1942,7 @@ type BattleHud = {
   watermark: string; setWatermark: (s: string) => void;
   showIntro: boolean;
   matchSeed: number;
-  fxRef: React.MutableRefObject<Array<{ kind: string; id: number; x?: number; y?: number; born?: number; until?: number; color?: string; strength?: number; n?: number }>>;
+  fxRef: React.MutableRefObject<Array<{ kind: string; id: number; x?: number; y?: number; born?: number; until?: number; color?: string; strength?: number; n?: number; name?: string; text?: string; sprite?: string }>>;
   hypeRef: React.MutableRefObject<{ value: number; overdriveUntil: number }>;
   comboRef: React.MutableRefObject<{ count: number; until: number }>;
   suddenDmgRef: React.MutableRefObject<boolean>;
@@ -2171,7 +2210,7 @@ function Battle(props: {
               : `-${p.value}${p.crit ? "!" : ""}`;
             return (
               <span key={p.id} className="dmg-pop pointer-events-none absolute text-[10px] sm:text-xs"
-                style={{ left: `${(p.x / ARENA_W) * 100}%`, top: `${(p.y / ARENA_H) * 100}%`, color: p.color }}>
+                style={{ left: `${(p.x / ARENA_W) * 100}%`, top: `${(p.y / ARENA_H) * 100}%`, color: p.color, fontSize: p.scale ? `${Math.round(11 * p.scale)}px` : undefined, textShadow: p.crit ? "0 0 8px #000, 0 0 12px currentColor" : "0 1px 2px #000" }}>
                 {label}
               </span>
             );
@@ -2308,6 +2347,10 @@ function FxLayer({ fxRef, now }: { fxRef: BattleHud["fxRef"]; now: number }) {
       f.kind === "gold" ? 3500 :
       f.kind === "critText" ? 700 :
       f.kind === "combo" ? 900 :
+      f.kind === "moveBanner" ? 1100 :
+      f.kind === "effBanner" ? 900 :
+      f.kind === "ghost" ? 1000 :
+      f.kind === "hitRing" ? 500 :
       f.kind === "flare" ? 500 : 0;
     if (life > 0 && f.born !== undefined && now - f.born > life) items.splice(i, 1);
     else if (f.until !== undefined && now > f.until) items.splice(i, 1);
@@ -2398,6 +2441,48 @@ function FxLayer({ fxRef, now }: { fxRef: BattleHud["fxRef"]; now: number }) {
               color: "#ffd83a", textShadow: "0 0 10px #000, 0 0 20px #ffd83a",
               animation: "fx-combo 0.9s ease-out forwards",
             }}>×{f.n} COMBO!</div>
+          );
+        }
+        if (f.kind === "moveBanner" && f.name && f.born !== undefined) {
+          return (
+            <div key={f.id} className="absolute bottom-6 left-1/2" style={{
+              transform: "translateX(-50%)", padding: "6px 14px",
+              background: "rgba(0,0,0,0.7)", border: `2px solid ${f.color}`,
+              color: f.color, fontSize: 14, fontWeight: 700,
+              boxShadow: `0 0 16px ${f.color}`,
+              animation: "fx-combo 1.1s ease-out forwards",
+            }}>{f.name}</div>
+          );
+        }
+        if (f.kind === "effBanner" && f.text && f.born !== undefined) {
+          return (
+            <div key={f.id} className="absolute left-1/2 top-6" style={{
+              transform: "translateX(-50%)", padding: "4px 10px",
+              background: "rgba(0,0,0,0.7)", border: `2px solid ${f.color}`,
+              color: f.color, fontSize: 12, fontWeight: 800,
+              animation: "fx-combo 0.9s ease-out forwards",
+            }}>{f.text}</div>
+          );
+        }
+        if (f.kind === "ghost" && f.sprite && f.x !== undefined && f.y !== undefined && f.born !== undefined) {
+          const t = (now - f.born) / 1000;
+          return (
+            <img key={f.id} src={f.sprite} alt="" style={{
+              position: "absolute", left: `${(f.x / ARENA_W) * 100}%`,
+              top: `${(f.y / ARENA_H) * 100}%`,
+              transform: `translate(-50%, calc(-50% - ${t * 60}px))`,
+              width: 48, height: 48, opacity: Math.max(0, 1 - t),
+              filter: `drop-shadow(0 0 8px ${f.color}) grayscale(0.6)`,
+              imageRendering: "pixelated", pointerEvents: "none",
+            }} />
+          );
+        }
+        if (f.kind === "hitRing" && f.x !== undefined && f.y !== undefined && f.color) {
+          return (
+            <div key={f.id} className="fx-ring" style={{
+              left: `${(f.x / ARENA_W) * 100}%`, top: `${(f.y / ARENA_H) * 100}%`,
+              width: 40, height: 40, borderColor: f.color,
+            }} />
           );
         }
         return null;
